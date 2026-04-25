@@ -11,6 +11,7 @@ document.getElementById('bookingForm').addEventListener('submit', function(e) {
         master: form.master.value,
         datetime: form.datetime.value
     };
-    tg.sendData(JSON.stringify(data));
+    const dataString = JSON.stringify(data);
+    tg.sendData(dataString);
     tg.close();
 });
