@@ -29,15 +29,16 @@ async def handle_health(request):
     return web.Response(text="OK")
 
 async def start_web_server():
+    port = int(os.environ.get("PORT", 8000))
     app = web.Application()
     app.router.add_get('/', handle_health)
     # Раздаём папку webapp по адресу /webapp/
     app.router.add_static('/webapp/', path='webapp/', show_index=True)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8000)
+    site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    logger.info("✅ Веб-сервер запущен: health check + статика /webapp/")
+    logger.info(f"✅ Веб-сервер запущен на порту {port} (health + статика /webapp/)")
 
 # ---------- Команды бота ----------
 @dp.message(Command("start"))
