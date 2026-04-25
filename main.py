@@ -7,7 +7,6 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import default_state
 from aiohttp import web
 
 from config import BOT_TOKEN, ADMIN_ID, CALENDAR_ID
@@ -16,21 +15,15 @@ from google_calendar import GoogleCalendarManager
 from keyboards import service_keyboard, master_keyboard, confirm_keyboard, cancel_keyboard
 from states import BookingForm
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-
-# Инициализация базы данных
 db = Database()
-
-# Инициализация Google Calendar
 calendar_manager = GoogleCalendarManager(CALENDAR_ID)
 
-# --- ВЕБ-СЕРВЕР ДЛЯ RENDER (чтобы не останавливал бота) ---
+# -------------------- Веб-сервер для Render --------------------
 async def handle_health(request):
     return web.Response(text="OK")
 
@@ -41,17 +34,15 @@ async def start_web_server():
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 8000)
     await site.start()
-    print("✅ Web server started on port 8000")
+    logger.info("✅ Веб-сервер запущен на порту 8000")
 
-# --- Хендлеры базовых команд ---
-
+# -------------------- Команды --------------------
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     user_id = message.from_user.id
     username = message.from_user.username
     await db.add_user(user_id, username)
     await state.clear()
-
     await message.answer(
         f"Приветствую, {message.from_user.first_name}! 👋\n\n"
         "Я бот для записи в салон красоты 'BeautyBook'.\n"
@@ -66,7 +57,6 @@ async def cmd_admin(message: Message):
         if not appointments:
             await message.answer("Записей пока нет.")
             return
-
         text = "*Текущие записи:*\n\n"
         for app in appointments:
             text += (f"👤 Клиент: {app['client_name']} (@{app['username']})\n"
@@ -76,82 +66,104 @@ async def cmd_admin(message: Message):
                      f"__________________________________\n")
         await message.answer(text, parse_mode="Markdown")
 
-# --- Хендлеры процесса записи ---
-
+# -------------------- Выбор услуги --------------------
 @dp.message(F.text.in_({"💅 Маникюр", "🦶 Педикюр"}))
 async def service_chosen(message: Message, state: FSMContext):
     await state.update_data(service=message.text)
     await state.set_state(BookingForm.master)
     await message.answer("Выберите мастера:", reply_markup=master_keyboard)
 
-@dp.message(BookingForm.master, F.text.in_({"👩‍🦰 Анна", "👩 Елена"}))
+# -------------------- Выбор мастера (исправленный) --------------------
+@dp.message(BookingForm.master)
 async def master_chosen(message: Message, state: FSMContext):
+    logger.info(f"Мастер выбран: {message.text}")
+    # Допустимые варианты
+    if message.text not in ["👩‍🦰 Анна", "👩 Елена"]:
+        await message.answer("Пожалуйста, выберите мастера, используя кнопки ниже.")
+        return
     await state.update_data(master=message.text)
     await state.set_state(BookingForm.date)
-    await message.answer("Выберите дату визита:", reply_markup=cancel_keyboard)
+    await message.answer(
+        "Введите дату визита в формате **ДД.ММ.ГГГГ** (например, 25.12.2025):\n\n"
+        "*Свободные слоты с 9:00 до 20:00, шаг 30 минут*",
+        parse_mode="Markdown",
+        reply_markup=cancel_keyboard
+    )
 
+# -------------------- Ввод даты --------------------
 @dp.message(BookingForm.date)
 async def date_chosen(message: Message, state: FSMContext):
     date_str = message.text.strip()
     if not re.match(r'\d{2}\.\d{2}\.\d{4}', date_str):
-        await message.answer("Пожалуйста, введите дату в формате **ДД.ММ.ГГГГ**.\nПример: `25.12.2025`", parse_mode="Markdown")
+        await message.answer("Неверный формат. Введите дату как **ДД.ММ.ГГГГ** (пример: 25.12.2025)", parse_mode="Markdown")
         return
-
     try:
         date_obj = datetime.strptime(date_str, "%d.%m.%Y").date()
         await state.update_data(date=date_obj)
-
         user_data = await state.get_data()
         master = user_data.get("master")
         busy_times = await db.get_appointments_for_date(date_str, master)
 
+        # Собираем свободные слоты
         time_buttons = []
         for hour in range(9, 20):
             for minute in [0, 30]:
                 slot = f"{hour:02d}:{minute:02d}"
                 if slot not in busy_times:
                     time_buttons.append([KeyboardButton(text=slot)])
-        time_keyboard = ReplyKeyboardMarkup(keyboard=time_buttons, resize_keyboard=True)
+        if not time_buttons:
+            await message.answer("На эту дату нет свободных слотов. Выберите другую дату.")
+            return
 
+        time_keyboard = ReplyKeyboardMarkup(keyboard=time_buttons, resize_keyboard=True)
         await state.set_state(BookingForm.time)
-        await message.answer(f"Отлично! На {date_str} свободные слоты:\nВыберите удобное время:",
+        await message.answer(f"Отлично! На {date_str} доступны следующие слоты:\nВыберите удобное время:",
                              reply_markup=time_keyboard)
     except ValueError:
-        await message.answer("Некорректная дата. Пожалуйста, используйте формат **ДД.ММ.ГГГГ**.", parse_mode="Markdown")
+        await message.answer("Некорректная дата. Используйте формат ДД.ММ.ГГГГ")
 
+# -------------------- Выбор времени --------------------
 @dp.message(BookingForm.time)
 async def time_chosen(message: Message, state: FSMContext):
+    if not re.match(r'\d{2}:\d{2}', message.text):
+        await message.answer("Пожалуйста, выберите время, используя кнопки.")
+        return
     await state.update_data(time=message.text)
     await state.set_state(BookingForm.name)
     await message.answer("Введите ваше имя:", reply_markup=cancel_keyboard)
 
+# -------------------- Имя и телефон --------------------
 @dp.message(BookingForm.name)
 async def name_chosen(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
+    name = message.text.strip()
+    if not name:
+        await message.answer("Имя не может быть пустым. Введите имя.")
+        return
+    await state.update_data(name=name)
     await state.set_state(BookingForm.phone)
-    await message.answer("Введите ваш номер телефона:")
+    await message.answer("Введите ваш номер телефона (например, +7 123 456-78-90):")
 
 @dp.message(BookingForm.phone)
 async def phone_chosen(message: Message, state: FSMContext):
     phone = message.text.strip()
-    phone_pattern = r'^((8|\+7)[\- ]?)?(\(?\d{3}\)?[\- ]?)?[\d\- ]{7,10}$'
-    if not re.match(phone_pattern, phone):
+    # Простейшая проверка российских номеров
+    if not re.match(r'^((8|\+7)[\- ]?)?(\(?\d{3}\)?[\- ]?)?[\d\- ]{7,10}$', phone):
         await message.answer("Пожалуйста, введите корректный номер телефона.")
         return
-
     await state.update_data(phone=phone)
     user_data = await state.get_data()
     await state.set_state(BookingForm.confirm)
 
-    confirmation_text = (f"📝 *Пожалуйста, проверьте данные:*\n\n"
-                         f"💅 Услуга: {user_data['service']}\n"
-                         f"👩‍🦰 Мастер: {user_data['master']}\n"
-                         f"📅 Дата: {user_data['date']} в {user_data['time']}\n"
-                         f"👤 Имя: {user_data['name']}\n"
-                         f"📞 Телефон: {user_data['phone']}\n\n"
-                         f"Всё верно?")
-    await message.answer(confirmation_text, reply_markup=confirm_keyboard, parse_mode="Markdown")
+    confirm_text = (f"📝 *Пожалуйста, проверьте данные:*\n\n"
+                    f"💅 Услуга: {user_data['service']}\n"
+                    f"👩‍🦰 Мастер: {user_data['master']}\n"
+                    f"📅 Дата: {user_data['date']} в {user_data['time']}\n"
+                    f"👤 Имя: {user_data['name']}\n"
+                    f"📞 Телефон: {user_data['phone']}\n\n"
+                    f"Всё верно?")
+    await message.answer(confirm_text, reply_markup=confirm_keyboard, parse_mode="Markdown")
 
+# -------------------- Подтверждение записи --------------------
 @dp.callback_query(BookingForm.confirm, F.data == "confirm_yes")
 async def confirm_booking(callback: CallbackQuery, state: FSMContext):
     user_data = await state.get_data()
@@ -176,43 +188,57 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
             end_time=f"{user_data['date']}T{user_data['time']}:00"
         )
     except Exception as e:
-        logger.error(f"Google Calendar error: {e}")
+        logger.error(f"Ошибка Google Calendar: {e}")
         event_link = "Ошибка создания события"
 
-    await callback.message.edit_text(f"✅ Запись подтверждена!\n\n"
-                                     f"Мы ждем вас {user_data['date']} в {user_data['time']}.\n"
-                                     f"До встречи!",
-                                     reply_markup=None)
+    await callback.message.edit_text(
+        f"✅ Запись подтверждена!\n\n"
+        f"Мы ждём вас {user_data['date']} в {user_data['time']}\n"
+        f"До встречи!",
+        reply_markup=None
+    )
     await state.clear()
 
-    await bot.send_message(ADMIN_ID,
-                           f"🆕 *Новая запись!*\n"
-                           f"ID записи: #{appointment_id}\n"
-                           f"Клиент: {user_data['name']}\n"
-                           f"Услуга: {user_data['service']}\n"
-                           f"Дата и время: {user_data['date']} {user_data['time']}\n"
-                           f"Ссылка в Google Calendar: {event_link}",
-                           parse_mode="Markdown")
+    await bot.send_message(
+        ADMIN_ID,
+        f"🆕 *Новая запись!*\n"
+        f"ID записи: #{appointment_id}\n"
+        f"Клиент: {user_data['name']}\n"
+        f"Услуга: {user_data['service']}\n"
+        f"Мастер: {user_data['master']}\n"
+        f"Дата и время: {user_data['date']} {user_data['time']}\n"
+        f"Ссылка в Google Calendar: {event_link}",
+        parse_mode="Markdown"
+    )
 
 @dp.callback_query(BookingForm.confirm, F.data == "confirm_no")
 async def cancel_booking(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("Хорошо, давайте начнем заново. Выберите услугу из меню ниже.",
-                                     reply_markup=service_keyboard)
+    await callback.message.edit_text(
+        "Хорошо, давайте начнём заново. Выберите услугу из меню ниже.",
+        reply_markup=service_keyboard
+    )
     await state.clear()
 
+# -------------------- Отмена действия --------------------
 @dp.message(F.text == "🚫 Отменить действие", StateFilter(BookingForm))
 async def cancel_action(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Действие отменено. Выберите услугу для записи.", reply_markup=service_keyboard)
 
-# --- Запуск ---
+# -------------------- Запуск бота --------------------
 async def main():
+    # Очищаем вебхук перед стартом long polling
+    await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Вебхук удалён, начинаем long polling")
+
     DSN = os.getenv("DATABASE_URL")
     if not DSN:
         raise ValueError("DATABASE_URL environment variable not set")
     await db.create_pool(DSN)
-    # Запускаем веб-сервер в фоне
+
+    # Запускаем фоновый веб-сервер для Render
     asyncio.create_task(start_web_server())
+
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
