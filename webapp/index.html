@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>BeautyBook – запись</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📅 Запись в BeautyBook</h1>
+        <form id="bookingForm">
+            <input type="text" name="name" placeholder="Ваше имя" required>
+            <input type="tel" name="phone" placeholder="Телефон" required>
+            <select name="service" required>
+                <option value="💅 Маникюр">💅 Маникюр</option>
+                <option value="🦶 Педикюр">🦶 Педикюр</option>
+            </select>
+            <select name="master" required>
+                <option value="👩‍🦰 Анна">👩‍🦰 Анна</option>
+                <option value="👩 Елена">👩 Елена</option>
+            </select>
+            <input type="datetime-local" name="datetime" required>
+            <button type="submit">✅ Записаться</button>
+        </form>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
