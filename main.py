@@ -9,6 +9,7 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardB
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiohttp import web
+from aiogram.types import WebAppInfo
 
 from config import BOT_TOKEN, ADMIN_ID, CALENDAR_ID
 from database import Database
@@ -49,7 +50,7 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     # Клавиатура с кнопкой открытия Mini App
     web_app_url = os.getenv("WEBAPP_URL", "https://beautybook-bot.onrender.com/webapp/")
-    web_app_button = KeyboardButton(text="📱 Записаться через приложение", web_app=web_app_url)
+    web_app_button = KeyboardButton(text="📱 Записаться через приложение", web_app=WebAppInfo(url=web_app_url))
     keyboard = ReplyKeyboardMarkup(keyboard=[[web_app_button]], resize_keyboard=True)
     await message.answer(
         f"Привет, {message.from_user.first_name}! 👋\n\n"
