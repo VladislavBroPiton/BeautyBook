@@ -3,11 +3,9 @@ import logging
 import os
 import json
 from datetime import datetime
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import Update, WebAppInfo
 from aiohttp import web
-from aiogram import Dispatcher, types, F   # F обязательно
 
 from config import BOT_TOKEN, ADMIN_ID, CALENDAR_ID
 from database import Database
@@ -21,15 +19,16 @@ dp = Dispatcher()
 db = Database()
 calendar_manager = GoogleCalendarManager(CALENDAR_ID)
 
-# ---------- Хендлеры команд ----------
+# ---------- Обработчики команд ----------
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username
     await db.add_user(user_id, username)
+
     web_app_url = os.getenv("WEBAPP_URL", "https://beautybook-bot.onrender.com/webapp/")
     keyboard = types.ReplyKeyboardMarkup(
-        keyboard=[[types.KeyboardButton(text="📱 Записаться через приложение", web_app=WebAppInfo(url=web_app_url))]],
+        keyboard=[[types.KeyboardButton(text="📱 Записаться через приложение", web_app=types.WebAppInfo(url=web_app_url))]],
         resize_keyboard=True
     )
     await message.answer(
@@ -53,7 +52,8 @@ async def cmd_admin(message: types.Message):
                  "__________________________________\n")
     await message.answer(text, parse_mode="Markdown")
 
-@dp.message(types.WebAppData)
+# ---------- Обработка данных из Mini App ----------
+@dp.message(F.web_app_data)
 async def handle_web_app_data(message: types.Message):
     data = json.loads(message.web_app_data.data)
     user_id = message.from_user.id
@@ -90,11 +90,11 @@ async def handle_web_app_data(message: types.Message):
         parse_mode="Markdown"
     )
 
-# ---------- Webhook ----------
+# ---------- Вебхук и статика ----------
 async def handle_webhook(request):
     try:
         data = await request.json()
-        update = Update(**data)
+        update = types.Update(**data)
         await dp.feed_update(bot, update)
         return web.Response(status=200)
     except Exception as e:
@@ -106,14 +106,16 @@ async def handle_health(request):
 
 # ---------- Запуск ----------
 async def main():
-    # Удаляем старые вебхуки и сбрасываем pending updates
+    # Удаляем предыдущие вебхуки и отменяем все pending updates
     await bot.delete_webhook(drop_pending_updates=True)
 
+    # Подключаем базу данных
     DSN = os.getenv("DATABASE_URL")
     if not DSN:
         raise ValueError("DATABASE_URL missing")
     await db.create_pool(DSN)
 
+    # Настраиваем веб-приложение
     app = web.Application()
     app.router.add_get('/health', handle_health)
     app.router.add_post('/webhook', handle_webhook)
@@ -126,11 +128,12 @@ async def main():
     await site.start()
     logger.info(f"✅ Веб-сервер запущен на порту {port}")
 
+    # Устанавливаем вебхук
     webhook_url = f"https://beautybook-bot.onrender.com/webhook"
     await bot.set_webhook(url=webhook_url)
     logger.info(f"✅ Вебхук установлен: {webhook_url}")
 
-    # Бесконечное ожидание, чтобы процесс не завершился
+    # Бесконечное ожидание (чтобы процесс не завершался)
     while True:
         await asyncio.sleep(3600)
 
