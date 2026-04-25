@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import os
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, FSInputFile
@@ -94,23 +95,24 @@ async def date_chosen(message: Message, state: FSMContext):
     try:
         date_obj = datetime.strptime(date_str, "%d.%m.%Y").date()
         await state.update_data(date=date_obj)
-        await state.set_state(BookingForm.time)
 
-        # Логика получения свободного времени
         user_data = await state.get_data()
         master = user_data.get("master")
         busy_times = await db.get_appointments_for_date(date_str, master)  # busy_times = ['10:00', '14:30']
 
-        # Формируем клавиатуру со временем
-        time_keyboard = []
-        for hour in range(9, 20):  # С 9 утра до 8 вечера
-            for minute in [0, 30]:  # С шагом в 30 минут
+        # Простейшая клавиатура со временем (можно доработать)
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        time_buttons = []
+        for hour in range(9, 20):
+            for minute in [0, 30]:
                 slot = f"{hour:02d}:{minute:02d}"
-                if slot in busy_times:  # Пропускаем занятые слоты
-                    continue
-                # ... (добавьте логику создания кнопок в time_keyboard)
+                if slot not in busy_times:
+                    time_buttons.append([KeyboardButton(text=slot)])
+        time_keyboard = ReplyKeyboardMarkup(keyboard=time_buttons, resize_keyboard=True)
 
-        await message.answer(f"Отлично! На {date_str} свободные слоты: (Здесь будет клавиатура со временем)", reply_markup=...)
+        await state.set_state(BookingForm.time)
+        await message.answer(f"Отлично! На {date_str} свободные слоты:\nВыберите удобное время:",
+                             reply_markup=time_keyboard)
     except ValueError:
         await message.answer("Некорректная дата. Пожалуйста, используйте формат **ДД.ММ.ГГГГ**.", parse_mode="Markdown")
 
@@ -210,8 +212,10 @@ async def cancel_action(message: Message, state: FSMContext):
 
 # --- Запуск бота ---
 async def main():
-    # Создаем DSN для подключения к PostgreSQL
-    DSN = "postgresql://user:password@localhost/beautybook"  # ЗАМЕНИТЕ НА СВОИ ДАННЫЕ!
+    # Берём строку подключения из переменной окружения
+    DSN = os.getenv("DATABASE_URL")
+    if not DSN:
+        raise ValueError("DATABASE_URL environment variable not set")
     await db.create_pool(DSN)
     await dp.start_polling(bot)
 
