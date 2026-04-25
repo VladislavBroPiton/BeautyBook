@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import os
+import json
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
@@ -12,7 +13,7 @@ from aiohttp import web
 from config import BOT_TOKEN, ADMIN_ID, CALENDAR_ID
 from database import Database
 from google_calendar import GoogleCalendarManager
-from keyboards import service_keyboard, master_keyboard, confirm_keyboard, cancel_keyboard
+from keyboards import service_keyboard, confirm_keyboard, cancel_keyboard
 from states import BookingForm
 
 logging.basicConfig(level=logging.INFO)
@@ -23,31 +24,36 @@ dp = Dispatcher()
 db = Database()
 calendar_manager = GoogleCalendarManager(CALENDAR_ID)
 
-# -------------------- Веб-сервер для Render --------------------
+# ---------- Веб-сервер для Render и статики ----------
 async def handle_health(request):
     return web.Response(text="OK")
 
 async def start_web_server():
     app = web.Application()
     app.router.add_get('/', handle_health)
+    # Раздаём папку webapp по адресу /webapp/
+    app.router.add_static('/webapp/', path='webapp/', show_index=True)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 8000)
     await site.start()
-    logger.info("✅ Веб-сервер запущен на порту 8000")
+    logger.info("✅ Веб-сервер запущен: health check + статика /webapp/")
 
-# -------------------- Команды --------------------
+# ---------- Команды бота ----------
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     user_id = message.from_user.id
     username = message.from_user.username
     await db.add_user(user_id, username)
     await state.clear()
+    # Клавиатура с кнопкой открытия Mini App
+    web_app_url = os.getenv("WEBAPP_URL", "https://beautybook-bot.onrender.com/webapp/")
+    web_app_button = KeyboardButton(text="📱 Записаться через приложение", web_app=web_app_url)
+    keyboard = ReplyKeyboardMarkup(keyboard=[[web_app_button]], resize_keyboard=True)
     await message.answer(
-        f"Приветствую, {message.from_user.first_name}! 👋\n\n"
-        "Я бот для записи в салон красоты 'BeautyBook'.\n"
-        "Чем могу помочь?",
-        reply_markup=service_keyboard
+        f"Привет, {message.from_user.first_name}! 👋\n\n"
+        "Я бот салона BeautyBook. Нажми на кнопку ниже, чтобы открыть удобную форму записи.",
+        reply_markup=keyboard
     )
 
 @dp.message(Command("admin"))
@@ -57,188 +63,80 @@ async def cmd_admin(message: Message):
         if not appointments:
             await message.answer("Записей пока нет.")
             return
-        text = "*Текущие записи:*\n\n"
+        text = "*Текущие записи:*\\n"
         for app in appointments:
-            text += (f"👤 Клиент: {app['client_name']} (@{app['username']})\n"
-                     f"💅 Услуга: {app['service']}\n"
-                     f"👩‍🦰 Мастер: {app['master']}\n"
-                     f"📅 Дата: {app['appointment_date']} в {app['appointment_time']}\n"
+            text += (f"👤 {app['client_name']} (@{app['username']})\n"
+                     f"💅 {app['service']} | 👩‍🦰 {app['master']}\n"
+                     f"📅 {app['appointment_date']} {app['appointment_time']}\n"
                      f"__________________________________\n")
         await message.answer(text, parse_mode="Markdown")
 
-# -------------------- Выбор услуги --------------------
-@dp.message(F.text.in_({"💅 Маникюр", "🦶 Педикюр"}))
-async def service_chosen(message: Message, state: FSMContext):
-    await state.update_data(service=message.text)
-    await state.set_state(BookingForm.master)
-    await message.answer("Выберите мастера:", reply_markup=master_keyboard)
+# ---------- Обработка данных из Mini App ----------
+@dp.message(F.web_app_data)
+async def handle_web_app_data(message: Message, state: FSMContext):
+    data = json.loads(message.web_app_data.data)
+    user_id = message.from_user.id
 
-# -------------------- Выбор мастера (исправленный) --------------------
-@dp.message(BookingForm.master)
-async def master_chosen(message: Message, state: FSMContext):
-    logger.info(f"Мастер выбран: {message.text}")
-    # Допустимые варианты
-    if message.text not in ["👩‍🦰 Анна", "👩 Елена"]:
-        await message.answer("Пожалуйста, выберите мастера, используя кнопки ниже.")
-        return
-    await state.update_data(master=message.text)
-    await state.set_state(BookingForm.date)
-    await message.answer(
-        "Введите дату визита в формате **ДД.ММ.ГГГГ** (например, 25.12.2025):\n\n"
-        "*Свободные слоты с 9:00 до 20:00, шаг 30 минут*",
-        parse_mode="Markdown",
-        reply_markup=cancel_keyboard
-    )
+    # Разбираем дату и время из строки вида "2025-12-25T15:30"
+    datetime_str = data['datetime']
+    date_part = datetime_str.split('T')[0]
+    time_part = datetime_str.split('T')[1]
 
-# -------------------- Ввод даты --------------------
-@dp.message(BookingForm.date)
-async def date_chosen(message: Message, state: FSMContext):
-    date_str = message.text.strip()
-    if not re.match(r'\d{2}\.\d{2}\.\d{4}', date_str):
-        await message.answer("Неверный формат. Введите дату как **ДД.ММ.ГГГГ** (пример: 25.12.2025)", parse_mode="Markdown")
-        return
-    try:
-        date_obj = datetime.strptime(date_str, "%d.%m.%Y").date()
-        await state.update_data(date=date_obj)
-        user_data = await state.get_data()
-        master = user_data.get("master")
-        busy_times = await db.get_appointments_for_date(date_str, master)
-
-        # Собираем свободные слоты
-        time_buttons = []
-        for hour in range(9, 20):
-            for minute in [0, 30]:
-                slot = f"{hour:02d}:{minute:02d}"
-                if slot not in busy_times:
-                    time_buttons.append([KeyboardButton(text=slot)])
-        if not time_buttons:
-            await message.answer("На эту дату нет свободных слотов. Выберите другую дату.")
-            return
-
-        time_keyboard = ReplyKeyboardMarkup(keyboard=time_buttons, resize_keyboard=True)
-        await state.set_state(BookingForm.time)
-        await message.answer(f"Отлично! На {date_str} доступны следующие слоты:\nВыберите удобное время:",
-                             reply_markup=time_keyboard)
-    except ValueError:
-        await message.answer("Некорректная дата. Используйте формат ДД.ММ.ГГГГ")
-
-# -------------------- Выбор времени --------------------
-@dp.message(BookingForm.time)
-async def time_chosen(message: Message, state: FSMContext):
-    if not re.match(r'\d{2}:\d{2}', message.text):
-        await message.answer("Пожалуйста, выберите время, используя кнопки.")
-        return
-    await state.update_data(time=message.text)
-    await state.set_state(BookingForm.name)
-    await message.answer("Введите ваше имя:", reply_markup=cancel_keyboard)
-
-# -------------------- Имя и телефон --------------------
-@dp.message(BookingForm.name)
-async def name_chosen(message: Message, state: FSMContext):
-    name = message.text.strip()
-    if not name:
-        await message.answer("Имя не может быть пустым. Введите имя.")
-        return
-    await state.update_data(name=name)
-    await state.set_state(BookingForm.phone)
-    await message.answer("Введите ваш номер телефона (например, +7 123 456-78-90):")
-
-@dp.message(BookingForm.phone)
-async def phone_chosen(message: Message, state: FSMContext):
-    phone = message.text.strip()
-    # Простейшая проверка российских номеров
-    if not re.match(r'^((8|\+7)[\- ]?)?(\(?\d{3}\)?[\- ]?)?[\d\- ]{7,10}$', phone):
-        await message.answer("Пожалуйста, введите корректный номер телефона.")
-        return
-    await state.update_data(phone=phone)
-    user_data = await state.get_data()
-    await state.set_state(BookingForm.confirm)
-
-    confirm_text = (f"📝 *Пожалуйста, проверьте данные:*\n\n"
-                    f"💅 Услуга: {user_data['service']}\n"
-                    f"👩‍🦰 Мастер: {user_data['master']}\n"
-                    f"📅 Дата: {user_data['date']} в {user_data['time']}\n"
-                    f"👤 Имя: {user_data['name']}\n"
-                    f"📞 Телефон: {user_data['phone']}\n\n"
-                    f"Всё верно?")
-    await message.answer(confirm_text, reply_markup=confirm_keyboard, parse_mode="Markdown")
-
-# -------------------- Подтверждение записи --------------------
-@dp.callback_query(BookingForm.confirm, F.data == "confirm_yes")
-async def confirm_booking(callback: CallbackQuery, state: FSMContext):
-    user_data = await state.get_data()
-    user_id = callback.from_user.id
-
+    # Сохраняем запись
     appointment_id = await db.add_appointment(
         user_id=user_id,
-        service=user_data['service'],
-        master=user_data['master'],
-        date=user_data['date'],
-        time=user_data['time'],
-        name=user_data['name'],
-        phone=user_data['phone']
+        service=data['service'],
+        master=data['master'],
+        date=date_part,
+        time=time_part,
+        name=data['name'],
+        phone=data['phone']
     )
-    logger.info(f"Новая запись #{appointment_id} от {user_data['name']}")
+    logger.info(f"Новая запись #{appointment_id} от {data['name']}")
 
+    # Google Calendar
     try:
         event_link = await calendar_manager.create_event(
-            summary=f"Запись в салон: {user_data['service']}",
-            description=f"Клиент: {user_data['name']}, Телефон: {user_data['phone']}",
-            start_time=f"{user_data['date']}T{user_data['time']}:00",
-            end_time=f"{user_data['date']}T{user_data['time']}:00"
+            summary=f"Запись в салон: {data['service']}",
+            description=f"Клиент: {data['name']}, Тел.: {data['phone']}",
+            start_time=f"{date_part}T{time_part}:00",
+            end_time=f"{date_part}T{time_part}:00"
         )
     except Exception as e:
-        logger.error(f"Ошибка Google Calendar: {e}")
+        logger.error(f"Calendar error: {e}")
         event_link = "Ошибка создания события"
 
-    await callback.message.edit_text(
-        f"✅ Запись подтверждена!\n\n"
-        f"Мы ждём вас {user_data['date']} в {user_data['time']}\n"
-        f"До встречи!",
-        reply_markup=None
-    )
-    await state.clear()
-
+    await message.answer(f"✅ Запись подтверждена!\n\nМы ждём вас {date_part} в {time_part}.\nДо встречи!")
     await bot.send_message(
         ADMIN_ID,
         f"🆕 *Новая запись!*\n"
-        f"ID записи: #{appointment_id}\n"
-        f"Клиент: {user_data['name']}\n"
-        f"Услуга: {user_data['service']}\n"
-        f"Мастер: {user_data['master']}\n"
-        f"Дата и время: {user_data['date']} {user_data['time']}\n"
-        f"Ссылка в Google Calendar: {event_link}",
+        f"ID: #{appointment_id}\n"
+        f"Клиент: {data['name']}\n"
+        f"Услуга: {data['service']}\n"
+        f"Мастер: {data['master']}\n"
+        f"Дата и время: {date_part} {time_part}\n"
+        f"Календарь: {event_link}",
         parse_mode="Markdown"
     )
 
-@dp.callback_query(BookingForm.confirm, F.data == "confirm_no")
-async def cancel_booking(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(
-        "Хорошо, давайте начнём заново. Выберите услугу из меню ниже.",
-        reply_markup=service_keyboard
-    )
-    await state.clear()
+# ---------- Обработчики старых кнопок (на случай, если кто-то нажмёт) ----------
+@dp.message(F.text.in_({"💅 Маникюр", "🦶 Педикюр"}))
+async def service_chosen(message: Message, state: FSMContext):
+    await message.answer("Пожалуйста, используйте кнопку «Записаться через приложение» в меню.")
 
-# -------------------- Отмена действия --------------------
 @dp.message(F.text == "🚫 Отменить действие", StateFilter(BookingForm))
 async def cancel_action(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("Действие отменено. Выберите услугу для записи.", reply_markup=service_keyboard)
+    await message.answer("Действие отменено. Используйте главную кнопку для записи.", reply_markup=service_keyboard)
 
-# -------------------- Запуск бота --------------------
+# ---------- Запуск ----------
 async def main():
-    # Очищаем вебхук перед стартом long polling
     await bot.delete_webhook(drop_pending_updates=True)
-    logger.info("Вебхук удалён, начинаем long polling")
-
     DSN = os.getenv("DATABASE_URL")
     if not DSN:
-        raise ValueError("DATABASE_URL environment variable not set")
+        raise ValueError("DATABASE_URL missing")
     await db.create_pool(DSN)
-
-    # Запускаем фоновый веб-сервер для Render
     asyncio.create_task(start_web_server())
-
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
