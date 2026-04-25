@@ -1,21 +1,16 @@
 import asyncio
 import logging
-import re
 import os
 import json
 from datetime import datetime
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import Command, StateFilter
-from aiogram.fsm.context import FSMContext
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import Message, Update
+from aiogram.filters import Command
 from aiohttp import web
-from aiogram.types import WebAppInfo
 
 from config import BOT_TOKEN, ADMIN_ID, CALENDAR_ID
 from database import Database
 from google_calendar import GoogleCalendarManager
-from keyboards import service_keyboard, confirm_keyboard, cancel_keyboard
-from states import BookingForm
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,36 +20,21 @@ dp = Dispatcher()
 db = Database()
 calendar_manager = GoogleCalendarManager(CALENDAR_ID)
 
-# ---------- Веб-сервер для Render и статики ----------
-async def handle_health(request):
-    return web.Response(text="OK")
-
-async def start_web_server():
-    port = int(os.environ.get("PORT", 8000))
-    app = web.Application()
-    app.router.add_get('/', handle_health)
-    # Раздаём папку webapp по адресу /webapp/
-    app.router.add_static('/webapp/', path='webapp/', show_index=True)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    logger.info(f"✅ Веб-сервер запущен на порту {port} (health + статика /webapp/)")
-
-# ---------- Команды бота ----------
+# ---------- Хендлер команд ----------
 @dp.message(Command("start"))
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username
     await db.add_user(user_id, username)
-    await state.clear()
-    # Клавиатура с кнопкой открытия Mini App
+
     web_app_url = os.getenv("WEBAPP_URL", "https://beautybook-bot.onrender.com/webapp/")
-    web_app_button = KeyboardButton(text="📱 Записаться через приложение", web_app=WebAppInfo(url=web_app_url))
-    keyboard = ReplyKeyboardMarkup(keyboard=[[web_app_button]], resize_keyboard=True)
+    keyboard = types.ReplyKeyboardMarkup(
+        keyboard=[[types.KeyboardButton(text="📱 Записаться через приложение", web_app=types.WebAppInfo(url=web_app_url))]],
+        resize_keyboard=True
+    )
     await message.answer(
         f"Привет, {message.from_user.first_name}! 👋\n\n"
-        "Я бот салона BeautyBook. Нажми на кнопку ниже, чтобы открыть удобную форму записи.",
+        "Нажми на кнопку ниже, чтобы записаться.",
         reply_markup=keyboard
     )
 
@@ -65,7 +45,7 @@ async def cmd_admin(message: Message):
         if not appointments:
             await message.answer("Записей пока нет.")
             return
-        text = "*Текущие записи:*\\n"
+        text = "*Текущие записи:*\n"
         for app in appointments:
             text += (f"👤 {app['client_name']} (@{app['username']})\n"
                      f"💅 {app['service']} | 👩‍🦰 {app['master']}\n"
@@ -73,18 +53,15 @@ async def cmd_admin(message: Message):
                      f"__________________________________\n")
         await message.answer(text, parse_mode="Markdown")
 
-# ---------- Обработка данных из Mini App ----------
 @dp.message(F.web_app_data)
-async def handle_web_app_data(message: Message, state: FSMContext):
+async def handle_web_app_data(message: Message):
     data = json.loads(message.web_app_data.data)
     user_id = message.from_user.id
 
-    # Разбираем дату и время из строки вида "2025-12-25T15:30"
     datetime_str = data['datetime']
     date_part = datetime_str.split('T')[0]
     time_part = datetime_str.split('T')[1]
 
-    # Сохраняем запись
     appointment_id = await db.add_appointment(
         user_id=user_id,
         service=data['service'],
@@ -96,7 +73,6 @@ async def handle_web_app_data(message: Message, state: FSMContext):
     )
     logger.info(f"Новая запись #{appointment_id} от {data['name']}")
 
-    # Google Calendar
     try:
         event_link = await calendar_manager.create_event(
             summary=f"Запись в салон: {data['service']}",
@@ -106,40 +82,60 @@ async def handle_web_app_data(message: Message, state: FSMContext):
         )
     except Exception as e:
         logger.error(f"Calendar error: {e}")
-        event_link = "Ошибка создания события"
+        event_link = "Ошибка"
 
-    await message.answer(f"✅ Запись подтверждена!\n\nМы ждём вас {date_part} в {time_part}.\nДо встречи!")
+    await message.answer(f"✅ Запись подтверждена!\n\nЖдём вас {date_part} в {time_part}.\nДо встречи!")
     await bot.send_message(
         ADMIN_ID,
-        f"🆕 *Новая запись!*\n"
-        f"ID: #{appointment_id}\n"
-        f"Клиент: {data['name']}\n"
-        f"Услуга: {data['service']}\n"
-        f"Мастер: {data['master']}\n"
-        f"Дата и время: {date_part} {time_part}\n"
-        f"Календарь: {event_link}",
+        f"🆕 *Новая запись!*\nID: #{appointment_id}\nКлиент: {data['name']}\nУслуга: {data['service']}\nМастер: {data['master']}\nДата и время: {date_part} {time_part}\nКалендарь: {event_link}",
         parse_mode="Markdown"
     )
 
-# ---------- Обработчики старых кнопок (на случай, если кто-то нажмёт) ----------
-@dp.message(F.text.in_({"💅 Маникюр", "🦶 Педикюр"}))
-async def service_chosen(message: Message, state: FSMContext):
-    await message.answer("Пожалуйста, используйте кнопку «Записаться через приложение» в меню.")
+# ---------- Вебхук ----------
+async def handle_webhook(request):
+    try:
+        data = await request.json()
+        update = Update(**data)
+        await dp.feed_update(bot, update)
+        return web.Response(status=200)
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return web.Response(status=200)
 
-@dp.message(F.text == "🚫 Отменить действие", StateFilter(BookingForm))
-async def cancel_action(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("Действие отменено. Используйте главную кнопку для записи.", reply_markup=service_keyboard)
+# ---------- Статика и health ----------
+async def handle_health(request):
+    return web.Response(text="OK")
 
-# ---------- Запуск ----------
+# ---------- Запуск приложения ----------
 async def main():
-    await bot.delete_webhook(drop_pending_updates=True)
+    # Подключаем базу
     DSN = os.getenv("DATABASE_URL")
     if not DSN:
         raise ValueError("DATABASE_URL missing")
     await db.create_pool(DSN)
-    asyncio.create_task(start_web_server())
-    await dp.start_polling(bot)
+
+    # Веб-приложение
+    app = web.Application()
+    app.router.add_get('/', handle_health)
+    app.router.add_post('/webhook', handle_webhook)
+    app.router.add_static('/webapp/', path='webapp/', show_index=True)
+
+    port = int(os.environ.get("PORT", 8000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    logger.info(f"✅ Веб-сервер запущен на порту {port} (health, webhook, статика /webapp/)")
+
+    # Устанавливаем вебхук (ещё раз для страховки)
+    await bot.delete_webhook(drop_pending_updates=True)
+    webhook_url = f"https://beautybook-bot.onrender.com/webhook"
+    await bot.set_webhook(url=webhook_url)
+    logger.info(f"✅ Вебхук установлен: {webhook_url}")
+
+    # Бесконечно ждём (чтобы процесс не завершался)
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
     asyncio.run(main())
