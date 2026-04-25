@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Update, WebAppInfo
 from aiohttp import web
+from aiogram import Dispatcher, types, F   # F обязательно
 
 from config import BOT_TOKEN, ADMIN_ID, CALENDAR_ID
 from database import Database
