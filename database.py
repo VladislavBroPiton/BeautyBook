@@ -112,7 +112,7 @@ class Database:
     async def get_busy_slots_for_master(self, master_tg_id: int, date: str):
     # Очищаем дату от возможного времени
     date_clean = date.split('T')[0] if 'T' in date else date.split(' ')[0]
-    async with self.pool.acquire() as conn:
+        async with self.pool.acquire() as conn:
         rows = await conn.fetch('''
             SELECT appointment_time FROM appointments
             WHERE master_telegram_id = $1 AND appointment_date = $2 AND status = 'active'
