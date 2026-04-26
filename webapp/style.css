@@ -96,13 +96,32 @@ button:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 14px var(--accent-glow);
 }
+.step {
+    display: none;
+    animation: fadeSlide 0.3s ease-out;
+}
+.step.active {
+    display: block;
+}
+@keyframes fadeSlide {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+.step-buttons {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+}
 .button-group {
     display: flex;
     gap: 12px;
     margin-top: 16px;
-}
-.button-group button {
-    flex: 1;
 }
 .btn-secondary {
     background: transparent;
@@ -138,4 +157,13 @@ button:hover {
     height: 100%;
     background: var(--accent);
     transition: width 0.3s;
+}
+.slot-info {
+    margin-top: 10px;
+    font-size: 14px;
+    color: var(--text-light);
+    background: var(--bg);
+    padding: 10px;
+    border-radius: 12px;
+    text-align: center;
 }
