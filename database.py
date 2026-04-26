@@ -5,22 +5,6 @@ class Database:
     def __init__(self):
         self.pool = None
 
-    async def get_appointments_by_master_telegram_id(self, master_tg_id: int):
-    async with self.pool.acquire() as conn:
-        return await conn.fetch('''
-            SELECT * FROM appointments
-            WHERE master_telegram_id = $1
-            ORDER BY appointment_date DESC, appointment_time DESC
-        ''', master_tg_id)
-
-async def get_appointment_by_id(self, app_id: int):
-    async with self.pool.acquire() as conn:
-        return await conn.fetchrow('SELECT * FROM appointments WHERE id = $1', app_id)
-
-async def delete_appointment(self, app_id: int):
-    async with self.pool.acquire() as conn:
-        await conn.execute('DELETE FROM appointments WHERE id = $1', app_id)
-
     async def create_pool(self, dsn: str):
         """Создание пула подключений к базе данных."""
         self.pool = await asyncpg.create_pool(dsn)
@@ -38,13 +22,14 @@ async def delete_appointment(self, app_id: int):
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
-            # Таблица записей (appointments)
+            # Таблица записей (appointments) с полем master_telegram_id
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS appointments (
                     id SERIAL PRIMARY KEY,
                     user_id BIGINT REFERENCES users(user_id),
                     service TEXT NOT NULL,
                     master TEXT,
+                    master_telegram_id BIGINT,
                     appointment_date DATE NOT NULL,
                     appointment_time TIME NOT NULL,
                     client_name TEXT,
@@ -53,7 +38,7 @@ async def delete_appointment(self, app_id: int):
                 )
             ''')
 
-    # --- Методы для работы с пользователями ---
+    # ---------- Работа с пользователями ----------
     async def add_user(self, user_id: int, username: str = None):
         """Добавляет нового пользователя, если его нет."""
         async with self.pool.acquire() as conn:
@@ -62,24 +47,34 @@ async def delete_appointment(self, app_id: int):
                 ON CONFLICT (user_id) DO NOTHING
             ''', user_id, username)
 
-    # --- Методы для работы с записями ---
-    async def add_appointment(self, user_id, service, master, date, time, name, phone):
+    # ---------- Работа с записями ----------
+    async def add_appointment(self, user_id, service, master, date, time, name, phone, master_telegram_id=None):
         """Добавляет новую запись в БД."""
         async with self.pool.acquire() as conn:
             return await conn.fetchrow('''
-                INSERT INTO appointments (user_id, service, master, appointment_date, appointment_time, client_name, client_phone)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO appointments (user_id, service, master, master_telegram_id, appointment_date, appointment_time, client_name, client_phone)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING id
-            ''', user_id, service, master, date, time, name, phone)
+            ''', user_id, service, master, master_telegram_id, date, time, name, phone)
 
-    async def get_appointments_for_date(self, date: str, master: str):
-        """Возвращает список занятых слотов на определенную дату для мастера."""
+    async def get_appointments_by_master_telegram_id(self, master_tg_id: int):
+        """Возвращает все записи для конкретного мастера (по его Telegram ID)."""
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch('''
-                SELECT appointment_time FROM appointments 
-                WHERE appointment_date = $1 AND master = $2
-            ''', date, master)
-            return [row['appointment_time'].strftime("%H:%M") for row in rows]
+            return await conn.fetch('''
+                SELECT * FROM appointments
+                WHERE master_telegram_id = $1
+                ORDER BY appointment_date DESC, appointment_time DESC
+            ''', master_tg_id)
+
+    async def get_appointment_by_id(self, app_id: int):
+        """Возвращает одну запись по ID."""
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow('SELECT * FROM appointments WHERE id = $1', app_id)
+
+    async def delete_appointment(self, app_id: int):
+        """Удаляет запись по ID."""
+        async with self.pool.acquire() as conn:
+            await conn.execute('DELETE FROM appointments WHERE id = $1', app_id)
 
     async def get_all_appointments(self):
         """Возвращает все записи (для администратора)."""
