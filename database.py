@@ -83,4 +83,4 @@ class Database:
                 SELECT a.*, u.username FROM appointments a
                 JOIN users u ON a.user_id = u.user_id
                 ORDER BY a.appointment_date DESC, a.appointment_time DESC
-            ''')
+            ''') 
