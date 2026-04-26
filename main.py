@@ -119,7 +119,11 @@ async def main():
     app = web.Application()
     app.router.add_get('/health', handle_health)
     app.router.add_post('/webhook', handle_webhook)
-    app.router.add_static('/webapp/', path='webapp/', show_index=True)
+    app.router.add_static('/webapp/static', path='webapp/', show_index=False)
+    from aiohttp import web
+    async def webapp_index(request):
+        return web.FileResponse('webapp/index.html')
+    app.router.add_get('/webapp/', webapp_index)
 
     port = int(os.environ.get("PORT", 8000))
     runner = web.AppRunner(app)
