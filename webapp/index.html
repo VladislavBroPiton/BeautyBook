@@ -5,26 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>BeautyBook – запись</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/webapp/static/style.css">
 </head>
 <body>
     <div class="container">
-        <h1>📅 Запись в BeautyBook</h1>
+        <h1>BeautyBook</h1>
+        <div class="subtitle">Запишись на процедуру за 30 секунд</div>
+        
         <form id="bookingForm">
-            <input type="text" name="name" placeholder="Ваше имя" required>
-            <input type="tel" name="phone" placeholder="Телефон" required>
-            <select name="service" required>
-                <option value="💅 Маникюр">💅 Маникюр</option>
-                <option value="🦶 Педикюр">🦶 Педикюр</option>
-            </select>
-            <select name="master" required>
-                <option value="👩‍🦰 Анна">👩‍🦰 Анна</option>
-                <option value="👩 Елена">👩 Елена</option>
-            </select>
-            <input type="datetime-local" name="datetime" required>
-            <button type="submit">✅ Записаться</button>
+            <div class="form-group">
+                <label>👤 Ваше имя</label>
+                <input type="text" name="name" placeholder="Анна" required autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label>📞 Номер телефона</label>
+                <input type="tel" name="phone" placeholder="+7 999 123-45-67" required autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label>💅 Услуга</label>
+                <select name="service" required>
+                    <option value="💅 Маникюр">💅 Маникюр</option>
+                    <option value="🦶 Педикюр">🦶 Педикюр</option>
+                    <option value="💆‍♀️ Спа-уход">💆‍♀️ Спа-уход</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>💇‍♀️ Мастер</label>
+                <select name="master" required>
+                    <option value="👩‍🦰 Анна">👩‍🦰 Анна</option>
+                    <option value="👩 Елена">👩 Елена</option>
+                    <option value="👩‍🦱 Наталья">👩‍🦱 Наталья</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>📅 Дата и время</label>
+                <input type="datetime-local" name="datetime" required>
+            </div>
+            <div id="formError" class="error-message"></div>
+            <div id="formSuccess" class="success-message"></div>
+            <div class="button-group">
+                <button type="submit" id="submitBtn">✅ Записаться</button>
+                <button type="button" id="resetBtn" class="btn-secondary">🗑 Очистить</button>
+            </div>
         </form>
     </div>
-    <script src="script.js"></script>
+    <script src="/webapp/static/script.js"></script>
 </body>
 </html>
