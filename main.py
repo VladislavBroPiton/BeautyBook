@@ -188,7 +188,10 @@ async def cmd_stats(message: types.Message):
 async def handle_web_app_data(message: types.Message):
     data = json.loads(message.web_app_data.data)
     user_id = message.from_user.id
-    datetime_str = data['datetime']
+    datetime_str = data.get('datetime', '')
+    if 'T' not in datetime_str:
+        await message.answer("Ошибка: неверный формат даты. Попробуйте снова.")
+        return
     date_part = datetime_str.split('T')[0]
     time_part = datetime_str.split('T')[1]
 
@@ -290,6 +293,8 @@ async def reminders_loop():
 async def handle_webhook(request):
     try:
         data = await request.json()
+        if not data:
+            raise ValueError("Empty data")
         update = types.Update(**data)
         await dp.feed_update(bot, update)
         return web.Response(status=200)
