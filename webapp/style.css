@@ -45,38 +45,36 @@ body {
     border: 1px solid var(--border);
 }
 
+.logo {
+    text-align: center;
+    margin-bottom: 16px;
+}
+.logo img {
+    max-width: 80px;
+    border-radius: 50%;
+}
+
 h1 {
     font-size: 28px;
     margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    text-align: center;
 }
-
-h1::before {
-    content: "💅";
-    font-size: 32px;
-}
-
 .subtitle {
+    text-align: center;
     color: var(--text-light);
     margin-bottom: 28px;
     font-size: 14px;
-    border-left: 3px solid var(--accent);
-    padding-left: 12px;
 }
 
 .form-group {
     margin-bottom: 20px;
 }
-
 label {
     display: block;
     margin-bottom: 8px;
     font-weight: 500;
     font-size: 14px;
 }
-
 input, select, button {
     width: 100%;
     padding: 14px 16px;
@@ -88,59 +86,48 @@ input, select, button {
     transition: all 0.2s ease;
     outline: none;
 }
-
 input:focus, select:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-glow);
 }
-
 button {
     background: linear-gradient(135deg, var(--accent), var(--accent-dark));
     color: white;
     font-weight: 600;
     border: none;
     cursor: pointer;
-    margin-top: 8px;
     transition: transform 0.1s, box-shadow 0.2s;
 }
-
 button:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 14px var(--accent-glow);
 }
-
 button:active {
     transform: translateY(0);
 }
-
 .button-group {
     display: flex;
     gap: 12px;
     margin-top: 16px;
 }
-
 .button-group button {
     flex: 1;
 }
-
 .btn-secondary {
     background: transparent;
     border: 1.5px solid var(--border);
     color: var(--text);
 }
-
 .btn-secondary:hover {
     background: var(--surface);
     box-shadow: none;
 }
-
 .error-message {
     color: var(--error);
     font-size: 12px;
     margin-top: 6px;
     display: none;
 }
-
 .success-message {
     background: var(--success);
     color: white;
@@ -149,4 +136,43 @@ button:active {
     margin-top: 20px;
     text-align: center;
     display: none;
+}
+.progress-bar {
+    background: var(--border);
+    border-radius: 20px;
+    margin-top: 20px;
+    overflow: hidden;
+    height: 8px;
+}
+.progress-fill {
+    width: 0%;
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+}
+.price-block {
+    text-align: right;
+    font-size: 18px;
+    font-weight: bold;
+    margin: 12px 0;
+}
+.price {
+    color: var(--accent);
+}
+
+/* Стили для календаря Flatpickr (под темную тему Telegram) */
+.flatpickr-calendar {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--border);
+}
+.flatpickr-day {
+    color: var(--text);
+}
+.flatpickr-day.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+.flatpickr-day.today {
+    border-color: var(--accent);
 }
