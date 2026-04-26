@@ -11,29 +11,36 @@ from config import BOT_TOKEN, ADMIN_ID, CALENDAR_ID
 from database import Database
 from google_calendar import GoogleCalendarManager
 
-# ---------- Настройка логов ----------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ---------- Инициализация бота и диспетчера ----------
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db = Database()
 calendar_manager = GoogleCalendarManager(CALENDAR_ID)
 
-# ---------- Список менеджеров (Telegram ID) ----------
+# Список менеджеров (мастеров)
 MANAGER_IDS = list(map(int, os.getenv("MANAGER_IDS", "").split(","))) if os.getenv("MANAGER_IDS") else []
-# Словарь для пагинации записей менеджера (user_id -> {apps, index})
 user_pagination = {}
 
-# ---------- Сопоставление имени мастера и его Telegram ID ----------
-MASTER_IDS = {
-    "👩‍🦰 Анна": 458433916,      # Замените на реальный Telegram ID Анны
-    "👩 Елена": 987654321,      # ID Елены
-    "👩‍🦱 Наталья": 555555555,   # ID Натальи (если есть)
+# Стоимость услуг
+PRICES = {
+    "💅 Маникюр": 2500,
+    "🦶 Педикюр": 3500,
+    "💆‍♀️ Спа-уход": 4000,
 }
 
-# ---------- Команда /start ----------
+# Соответствие имени мастера и Telegram ID
+MASTER_IDS = {
+    "👩‍🦰 Анна": 458433916,     # заменить
+    "👩 Елена": 987654321,
+    "👩‍🦱 Наталья": 555555555,
+}
+
+# Лимит записей на мастера в день
+DAILY_LIMIT = 5
+
+# ---------- Команды ----------
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_id = message.from_user.id
@@ -50,7 +57,6 @@ async def cmd_start(message: types.Message):
         reply_markup=keyboard
     )
 
-# ---------- Команда /admin (только для владельца) ----------
 @dp.message(Command("admin"))
 async def cmd_admin(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -61,29 +67,58 @@ async def cmd_admin(message: types.Message):
         return
     text = "*Текущие записи (все):*\n"
     for app in appointments:
-        text += (f"👤 {app['client_name']} (@{app['username']})\n"
+        text += (f"🆔 {app['id']} - {app['client_name']} (@{app['username']})\n"
                  f"💅 {app['service']} | 👩‍🦰 {app['master']}\n"
                  f"📅 {app['appointment_date']} {app['appointment_time']}\n"
-                 "──────────────────\n")
+                 f"💰 {app['service_price']} руб.\n──────────────────\n")
     await message.answer(text, parse_mode="Markdown")
 
-# ---------- Команда /my для менеджеров (просмотр своих записей) ----------
+# Команда для клиента: мои записи
+@dp.message(Command("my_records"))
+async def show_my_records(message: types.Message):
+    user_id = message.from_user.id
+    records = await db.get_appointments_by_user_id(user_id)
+    if not records:
+        await message.answer("У вас пока нет активных записей.")
+        return
+    text = "*📋 Ваши записи:*\n\n"
+    for r in records:
+        text += (f"🆔 #{r['id']}\n"
+                 f"💅 {r['service']}\n"
+                 f"👩‍🦰 Мастер: {r['master']}\n"
+                 f"📅 {r['appointment_date']} в {r['appointment_time']}\n"
+                 f"💰 {r['service_price']} руб.\n"
+                 f"──────────────────\n")
+    await message.answer(text, parse_mode="Markdown")
+
+# Команда для отмены записи клиентом
+@dp.message(Command("cancel_record"))
+async def cancel_record_cmd(message: types.Message):
+    await message.answer("Напишите номер записи, которую хотите отменить (можно посмотреть командой /my_records).")
+    # Более удобно: сделать инлайн-кнопки, но для простоты предлагаю по номеру.
+
+@dp.message(lambda msg: msg.text.isdigit())
+async def cancel_by_number(message: types.Message):
+    record_id = int(message.text)
+    record = await db.get_appointment_by_id(record_id)
+    if not record or record['user_id'] != message.from_user.id:
+        await message.answer("Запись не найдена или она не ваша.")
+        return
+    await db.delete_appointment(record_id)
+    await message.answer(f"✅ Запись #{record_id} отменена.")
+
+# Команда для менеджеров (как ранее)
 @dp.message(Command("my"))
 async def show_my_appointments(message: types.Message):
     user_id = message.from_user.id
     if user_id not in MANAGER_IDS:
-        await message.answer("⛔ У вас нет доступа к этой команде.")
+        await message.answer("⛔ У вас нет доступа.")
         return
-
     appointments = await db.get_appointments_by_master_telegram_id(user_id)
     if not appointments:
         await message.answer("У вас пока нет записей.")
         return
-
-    user_pagination[user_id] = {
-        "apps": appointments,
-        "index": 0
-    }
+    user_pagination[user_id] = {"apps": appointments, "index": 0}
     await send_appointment_card(message, user_id, 0)
 
 async def send_appointment_card(message: types.Message, user_id: int, idx: int):
@@ -95,14 +130,13 @@ async def send_appointment_card(message: types.Message, user_id: int, idx: int):
             f"👤 Клиент: {app['client_name']}\n"
             f"📞 Телефон: {app['client_phone']}\n"
             f"💅 Услуга: {app['service']}\n"
+            f"💰 {app['service_price']} руб.\n"
             f"📅 Дата: {app['appointment_date']}\n"
             f"⏰ Время: {app['appointment_time']}\n")
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="❌ Отменить запись", callback_data=f"cancel_{app['id']}")],
-        [
-            types.InlineKeyboardButton(text="◀️ Назад", callback_data=f"prev_{idx}"),
-            types.InlineKeyboardButton(text="Вперёд ▶️", callback_data=f"next_{idx}")
-        ]
+        [types.InlineKeyboardButton(text="◀️ Назад", callback_data=f"prev_{idx}"),
+         types.InlineKeyboardButton(text="Вперёд ▶️", callback_data=f"next_{idx}")]
     ])
     await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
 
@@ -114,7 +148,6 @@ async def handle_pagination(callback: types.CallbackQuery):
     if not data:
         await callback.answer("Сессия устарела, начните заново с /my", show_alert=True)
         return
-
     if action == "prev":
         new_idx = max(0, int(val)-1)
         data["index"] = new_idx
@@ -129,11 +162,10 @@ async def handle_pagination(callback: types.CallbackQuery):
         app_id = int(val)
         app = await db.get_appointment_by_id(app_id)
         if not app or app["master_telegram_id"] != user_id:
-            await callback.answer("Нет прав для отмены этой записи", show_alert=True)
+            await callback.answer("Нет прав для отмены", show_alert=True)
             return
         await db.delete_appointment(app_id)
         await callback.answer("Запись отменена", show_alert=True)
-        # Обновляем список записей
         new_apps = await db.get_appointments_by_master_telegram_id(user_id)
         if not new_apps:
             await callback.message.edit_text("У вас больше нет записей.")
@@ -145,7 +177,7 @@ async def handle_pagination(callback: types.CallbackQuery):
         await send_appointment_card(callback.message, user_id, data["index"])
     await callback.answer()
 
-# ---------- Обработка данных из Mini App ----------
+# Обработка данных из Mini App
 @dp.message(F.web_app_data)
 async def handle_web_app_data(message: types.Message):
     data = json.loads(message.web_app_data.data)
@@ -156,22 +188,34 @@ async def handle_web_app_data(message: types.Message):
 
     master_name = data['master']
     master_tg_id = MASTER_IDS.get(master_name)
+    if not master_tg_id:
+        await message.answer("Ошибка: мастер не найден. Пожалуйста, обновите приложение.")
+        return
+
+    # Проверка лимита записей на мастера
+    if not await db.check_master_limit(master_tg_id, date_part, DAILY_LIMIT):
+        await message.answer(f"Извините, у мастера {master_name} уже достигнут лимит записей на этот день ({DAILY_LIMIT}). Выберите другую дату или мастера.")
+        return
+
+    service = data['service']
+    price = PRICES.get(service, 0)
 
     appointment_id = await db.add_appointment(
         user_id=user_id,
-        service=data['service'],
+        service=service,
+        service_price=price,
         master=master_name,
+        master_telegram_id=master_tg_id,
         date=date_part,
         time=time_part,
         name=data['name'],
-        phone=data['phone'],
-        master_telegram_id=master_tg_id
+        phone=data['phone']
     )
     logger.info(f"Новая запись #{appointment_id} от {data['name']}")
 
     try:
         event_link = await calendar_manager.create_event(
-            summary=f"Запись в салон: {data['service']}",
+            summary=f"Запись в салон: {service}",
             description=f"Клиент: {data['name']}, Тел.: {data['phone']}",
             start_time=f"{date_part}T{time_part}:00",
             end_time=f"{date_part}T{time_part}:00"
@@ -180,13 +224,16 @@ async def handle_web_app_data(message: types.Message):
         logger.error(f"Calendar error: {e}")
         event_link = "Ошибка создания события"
 
-    await message.answer(f"✅ Запись подтверждена!\n\nЖдём вас {date_part} в {time_part}.\nДо встречи!")
+    await message.answer(f"✅ Запись подтверждена!\n\n"
+                         f"Ждём вас {date_part} в {time_part}.\n"
+                         f"Стоимость: {price} руб.\n\n"
+                         f"Отменить запись можно командой /my_records и кнопкой отмены (скоро будет).")
     await bot.send_message(
         ADMIN_ID,
         f"🆕 *Новая запись!*\n"
         f"ID: #{appointment_id}\n"
         f"Клиент: {data['name']}\n"
-        f"Услуга: {data['service']}\n"
+        f"Услуга: {service} ({price} руб.)\n"
         f"Мастер: {master_name}\n"
         f"Дата и время: {date_part} {time_part}\n"
         f"Календарь: {event_link}",
@@ -210,11 +257,8 @@ async def handle_health(request):
 async def webapp_index(request):
     return web.FileResponse('webapp/index.html')
 
-# ---------- Запуск ----------
 async def main():
-    # Удаляем предыдущие вебхуки
     await bot.delete_webhook(drop_pending_updates=True)
-
     DSN = os.getenv("DATABASE_URL")
     if not DSN:
         raise ValueError("DATABASE_URL missing")
@@ -237,7 +281,6 @@ async def main():
     await bot.set_webhook(url=webhook_url)
     logger.info(f"✅ Вебхук установлен: {webhook_url}")
 
-    # Бесконечное ожидание (чтобы процесс не завершался)
     while True:
         await asyncio.sleep(3600)
 
