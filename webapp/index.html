@@ -5,16 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>BeautyBook – запись</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ru.js"></script>
     <link rel="stylesheet" href="/webapp/static/style.css">
 </head>
 <body>
     <div class="container">
         <div class="logo">
-            <img src="/webapp/static/logo.png" alt="BeautyBook" id="logoImg">
+            <img src="/webapp/static/logo.png" alt="BeautyBook" id="logoImg" style="display:none;">
             <h1>BeautyBook</h1>
         </div>
         <div class="subtitle">Запись за 30 секунд</div>
-        
         <form id="bookingForm">
             <div class="form-group">
                 <label>👤 Ваше имя</label>
@@ -41,16 +43,10 @@
                 </select>
             </div>
             <div class="form-group">
-                <label>📅 Дата</label>
-                <div id="calendar" class="calendar"></div>
-                <input type="hidden" name="date" id="selectedDate">
+                <label>📅 Дата и время</label>
+                <input type="text" id="datetimePicker" name="datetime" placeholder="Выберите дату и время" required>
             </div>
-            <div class="form-group">
-                <label>⏰ Время</label>
-                <div id="timeSlots" class="time-slots"></div>
-                <input type="hidden" name="time" id="selectedTime">
-            </div>
-            <div id="priceDisplay" class="price">Стоимость: 0 ₽</div>
+            <div id="totalPrice" class="price">Стоимость: 0 ₽</div>
             <div id="formError" class="error-message"></div>
             <div class="progress-bar" id="progressBar" style="display:none;"><div class="progress-fill"></div></div>
             <div class="button-group">
