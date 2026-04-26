@@ -47,13 +47,16 @@ updatePrice();
 async function loadFreeSlots() {
     const master = document.querySelector('[name="master"]').value;
     const dateInput = document.getElementById('datetimePicker');
-    const date = dateInput.value.split('T')[0];
+    let date = dateInput.value;
+    if (!date) return;
+    // Оставляем только дату (YYYY-MM-DD)
+    if (date.includes('T')) date = date.split('T')[0];
+    if (date.includes(' ')) date = date.split(' ')[0];
     if (!master || !date) return;
     try {
         const response = await fetch(`/get_slots?master=${encodeURIComponent(master)}&date=${date}`);
         const data = await response.json();
         const busy = data.busy || [];
-        // Генерируем все слоты с 9:00 до 20:00 с шагом 30 мин
         const allSlots = [];
         for (let h = 9; h <= 20; h++) {
             for (let m = 0; m < 60; m += 30) {
@@ -69,6 +72,7 @@ async function loadFreeSlots() {
         }
     } catch (err) {
         console.error(err);
+        document.getElementById('slotInfo').innerHTML = `<strong>❌ Ошибка загрузки слотов</strong>`;
     }
 }
 
