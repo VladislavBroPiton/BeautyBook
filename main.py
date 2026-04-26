@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiohttp import web
@@ -30,7 +30,7 @@ PRICES = {
 }
 
 MASTER_IDS = {
-    "👩‍🦰 Анна": 458433916,     # замените на реальные ID
+    "👩‍🦰 Анна": 123456789,     # замените на реальные ID
     "👩 Елена": 987654321,
     "👩‍🦱 Наталья": 555555555,
 }
@@ -76,15 +76,28 @@ async def show_my_records(message: types.Message):
     if not records:
         await message.answer("У вас пока нет активных записей.")
         return
-    text = "*📋 Ваши записи:*\n\n"
     for r in records:
-        text += (f"🆔 #{r['id']}\n"
-                 f"💅 {r['service']}\n"
-                 f"👩‍🦰 Мастер: {r['master']}\n"
-                 f"📅 {r['appointment_date']} в {r['appointment_time']}\n"
-                 f"💰 {r['service_price']} руб.\n"
-                 f"──────────────────\n")
-    await message.answer(text, parse_mode="Markdown")
+        text = (f"🆔 *Запись #{r['id']}*\n"
+                f"💅 {r['service']}\n"
+                f"👩‍🦰 Мастер: {r['master']}\n"
+                f"📅 {r['appointment_date']} в {r['appointment_time']}\n"
+                f"💰 {r['service_price']} руб.\n")
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="❌ Отменить запись", callback_data=f"user_cancel_{r['id']}")]
+        ])
+        await message.answer(text, parse_mode="Markdown", reply_markup=keyboard)
+
+@dp.callback_query(lambda c: c.data.startswith("user_cancel_"))
+async def user_cancel_appointment(callback: types.CallbackQuery):
+    app_id = int(callback.data.split("_")[2])
+    user_id = callback.from_user.id
+    app = await db.get_appointment_by_id(app_id)
+    if not app or app["user_id"] != user_id:
+        await callback.answer("Запись не найдена или нет прав.", show_alert=True)
+        return
+    await db.delete_appointment(app_id)
+    await callback.answer("Запись отменена", show_alert=True)
+    await callback.message.edit_text(f"✅ Запись #{app_id} отменена.")
 
 @dp.message(Command("my"))
 async def show_my_appointments(message: types.Message):
@@ -155,6 +168,22 @@ async def handle_pagination(callback: types.CallbackQuery):
         await send_appointment_card(callback.message, user_id, data["index"])
     await callback.answer()
 
+@dp.message(Command("stats"))
+async def cmd_stats(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    total = await db.get_appointments_count()
+    today = datetime.now().date()
+    today_count = await db.get_appointments_count_for_date(today)
+    by_service = await db.get_appointments_grouped_by_service()
+    by_master = await db.get_appointments_grouped_by_master()
+    text = (f"*📊 Статистика*\n\n"
+            f"Всего записей: {total}\n"
+            f"За сегодня: {today_count}\n\n"
+            f"*По услугам:*\n" + "\n".join([f"{s['service']}: {s['count']}" for s in by_service]) + "\n\n"
+            f"*По мастерам:*\n" + "\n".join([f"{m['master']}: {m['count']}" for m in by_master]))
+    await message.answer(text, parse_mode="Markdown")
+
 @dp.message(F.web_app_data)
 async def handle_web_app_data(message: types.Message):
     data = json.loads(message.web_app_data.data)
@@ -213,6 +242,48 @@ async def handle_web_app_data(message: types.Message):
         parse_mode="Markdown"
     )
 
+# ---------- Эндпоинт для получения свободных слотов (AJAX) ----------
+async def get_slots(request):
+    master = request.query.get('master')
+    date = request.query.get('date')
+    if not master or not date:
+        return web.json_response({"error": "Missing params"}, status=400)
+    master_id = MASTER_IDS.get(master)
+    if not master_id:
+        return web.json_response({"error": "Master not found"}, status=404)
+    busy_times = await db.get_busy_slots_for_master(master_id, date)
+    return web.json_response({"busy": busy_times})
+
+# ---------- Фоновая задача напоминаний ----------
+async def reminders_loop():
+    while True:
+        now = datetime.now()
+        tomorrow = now + timedelta(days=1)
+        next_hour = now + timedelta(hours=1)
+        today_str = now.strftime("%Y-%m-%d")
+        tomorrow_str = tomorrow.strftime("%Y-%m-%d")
+        next_hour_str = next_hour.strftime("%H:%M")
+
+        # За день
+        day_appointments = await db.get_appointments_for_reminder(tomorrow_str, 'day')
+        for app in day_appointments:
+            try:
+                await bot.send_message(app['user_id'], f"🔔 Напоминаем, что завтра в {app['appointment_time']} у вас запись на {app['service']}.")
+                await db.mark_reminder_sent(app['id'], 'day')
+            except Exception as e:
+                logger.error(f"Reminder error (day): {e}")
+
+        # За час
+        hour_appointments = await db.get_appointments_for_reminder(today_str, 'hour', next_hour_str)
+        for app in hour_appointments:
+            try:
+                await bot.send_message(app['user_id'], f"🔔 Через час у вас запись на {app['service']} в {app['appointment_time']}.")
+                await db.mark_reminder_sent(app['id'], 'hour')
+            except Exception as e:
+                logger.error(f"Reminder error (hour): {e}")
+
+        await asyncio.sleep(60)  # каждую минуту
+
 # ---------- Webhook и статика ----------
 async def handle_webhook(request):
     try:
@@ -242,6 +313,7 @@ async def main():
     app.router.add_post('/webhook', handle_webhook)
     app.router.add_get('/webapp/', webapp_index)
     app.router.add_static('/webapp/static', path='webapp/', show_index=False)
+    app.router.add_get('/get_slots', get_slots)   # эндпоинт для свободных слотов
 
     port = int(os.environ.get("PORT", 8000))
     runner = web.AppRunner(app)
@@ -253,6 +325,9 @@ async def main():
     webhook_url = f"https://beautybook-bot.onrender.com/webhook"
     await bot.set_webhook(url=webhook_url)
     logger.info(f"✅ Вебхук установлен: {webhook_url}")
+
+    # Запускаем фоновую задачу напоминаний
+    asyncio.create_task(reminders_loop())
 
     while True:
         await asyncio.sleep(3600)
