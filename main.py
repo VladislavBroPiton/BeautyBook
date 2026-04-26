@@ -19,25 +19,21 @@ dp = Dispatcher()
 db = Database()
 calendar_manager = GoogleCalendarManager(CALENDAR_ID)
 
-# Список менеджеров (мастеров)
+# ---------- Настройки ----------
 MANAGER_IDS = list(map(int, os.getenv("MANAGER_IDS", "").split(","))) if os.getenv("MANAGER_IDS") else []
 user_pagination = {}
 
-# Стоимость услуг
 PRICES = {
     "💅 Маникюр": 2500,
     "🦶 Педикюр": 3500,
     "💆‍♀️ Спа-уход": 4000,
 }
 
-# Соответствие имени мастера и Telegram ID
 MASTER_IDS = {
-    "👩‍🦰 Анна": 458433916,     # заменить
+    "👩‍🦰 Анна": 458433916,     # замените на реальные ID
     "👩 Елена": 987654321,
     "👩‍🦱 Наталья": 555555555,
 }
-
-# Лимит записей на мастера в день
 DAILY_LIMIT = 5
 
 # ---------- Команды ----------
@@ -73,7 +69,6 @@ async def cmd_admin(message: types.Message):
                  f"💰 {app['service_price']} руб.\n──────────────────\n")
     await message.answer(text, parse_mode="Markdown")
 
-# Команда для клиента: мои записи
 @dp.message(Command("my_records"))
 async def show_my_records(message: types.Message):
     user_id = message.from_user.id
@@ -91,23 +86,6 @@ async def show_my_records(message: types.Message):
                  f"──────────────────\n")
     await message.answer(text, parse_mode="Markdown")
 
-# Команда для отмены записи клиентом
-@dp.message(Command("cancel_record"))
-async def cancel_record_cmd(message: types.Message):
-    await message.answer("Напишите номер записи, которую хотите отменить (можно посмотреть командой /my_records).")
-    # Более удобно: сделать инлайн-кнопки, но для простоты предлагаю по номеру.
-
-@dp.message(lambda msg: msg.text.isdigit())
-async def cancel_by_number(message: types.Message):
-    record_id = int(message.text)
-    record = await db.get_appointment_by_id(record_id)
-    if not record or record['user_id'] != message.from_user.id:
-        await message.answer("Запись не найдена или она не ваша.")
-        return
-    await db.delete_appointment(record_id)
-    await message.answer(f"✅ Запись #{record_id} отменена.")
-
-# Команда для менеджеров (как ранее)
 @dp.message(Command("my"))
 async def show_my_appointments(message: types.Message):
     user_id = message.from_user.id
@@ -177,7 +155,6 @@ async def handle_pagination(callback: types.CallbackQuery):
         await send_appointment_card(callback.message, user_id, data["index"])
     await callback.answer()
 
-# Обработка данных из Mini App
 @dp.message(F.web_app_data)
 async def handle_web_app_data(message: types.Message):
     data = json.loads(message.web_app_data.data)
@@ -189,12 +166,11 @@ async def handle_web_app_data(message: types.Message):
     master_name = data['master']
     master_tg_id = MASTER_IDS.get(master_name)
     if not master_tg_id:
-        await message.answer("Ошибка: мастер не найден. Пожалуйста, обновите приложение.")
+        await message.answer("Ошибка: мастер не найден. Обновите приложение.")
         return
 
-    # Проверка лимита записей на мастера
     if not await db.check_master_limit(master_tg_id, date_part, DAILY_LIMIT):
-        await message.answer(f"Извините, у мастера {master_name} уже достигнут лимит записей на этот день ({DAILY_LIMIT}). Выберите другую дату или мастера.")
+        await message.answer(f"Извините, у мастера {master_name} достигнут лимит на этот день ({DAILY_LIMIT}). Выберите другую дату.")
         return
 
     service = data['service']
@@ -224,10 +200,7 @@ async def handle_web_app_data(message: types.Message):
         logger.error(f"Calendar error: {e}")
         event_link = "Ошибка создания события"
 
-    await message.answer(f"✅ Запись подтверждена!\n\n"
-                         f"Ждём вас {date_part} в {time_part}.\n"
-                         f"Стоимость: {price} руб.\n\n"
-                         f"Отменить запись можно командой /my_records и кнопкой отмены (скоро будет).")
+    await message.answer(f"✅ Запись подтверждена!\n\nЖдём вас {date_part} в {time_part}.\nСтоимость: {price} руб.\n")
     await bot.send_message(
         ADMIN_ID,
         f"🆕 *Новая запись!*\n"
@@ -240,7 +213,7 @@ async def handle_web_app_data(message: types.Message):
         parse_mode="Markdown"
     )
 
-# ---------- Вебхук и статика ----------
+# ---------- Webhook и статика ----------
 async def handle_webhook(request):
     try:
         data = await request.json()
