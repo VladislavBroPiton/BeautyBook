@@ -115,7 +115,7 @@ class Database:
             date_obj = datetime.strptime(date[:10], '%Y-%m-%d').date()
         except (ValueError, TypeError):
             return []
-    async with self.pool.acquire() as conn:
+        async with self.pool.acquire() as conn:
             rows = await conn.fetch('''
                 SELECT appointment_time FROM appointments
                 WHERE master_telegram_id = $1 AND appointment_date = $2 AND status = 'active'
