@@ -6,34 +6,30 @@
     <title>BeautyBook – запись</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="/webapp/static/style.css">
-    <!-- Подключаем Flatpickr для календаря и времени -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/rangePlugin.js"></script>
 </head>
 <body>
-    <div class="container" id="app">
+    <div class="container">
         <div class="logo">
-            <img src="https://your-logo-url.com/logo.png" alt="BeautyBook" onerror="this.src='data:image/svg+xml,%3Csvg...%3E'">
+            <img src="/webapp/static/logo.png" alt="BeautyBook" id="logoImg">
+            <h1>BeautyBook</h1>
         </div>
-        <h1>BeautyBook</h1>
-        <div class="subtitle">Запишись за 30 секунд</div>
-
+        <div class="subtitle">Запись за 30 секунд</div>
+        
         <form id="bookingForm">
             <div class="form-group">
                 <label>👤 Ваше имя</label>
-                <input type="text" name="name" placeholder="Анна" required autocomplete="off">
+                <input type="text" name="name" placeholder="Анна" required>
             </div>
             <div class="form-group">
-                <label>📞 Номер телефона</label>
-                <input type="tel" name="phone" placeholder="+7 999 123-45-67" required autocomplete="off">
+                <label>📞 Телефон</label>
+                <input type="tel" name="phone" placeholder="+7 999 123-45-67" required>
             </div>
             <div class="form-group">
                 <label>💅 Услуга</label>
-                <select name="service" id="serviceSelect" required>
-                    <option value="💅 Маникюр" data-price="1500">💅 Маникюр — 1500 ₽</option>
-                    <option value="🦶 Педикюр" data-price="2500">🦶 Педикюр — 2500 ₽</option>
-                    <option value="💆‍♀️ Спа-уход" data-price="3500">💆‍♀️ Спа-уход — 3500 ₽</option>
+                <select name="service" id="serviceSelect">
+                    <option value="💅 Маникюр" data-price="2500">💅 Маникюр – 2500 ₽</option>
+                    <option value="🦶 Педикюр" data-price="3500">🦶 Педикюр – 3500 ₽</option>
+                    <option value="💆‍♀️ Спа-уход" data-price="4000">💆‍♀️ Спа-уход – 4000 ₽</option>
                 </select>
             </div>
             <div class="form-group">
@@ -45,17 +41,18 @@
                 </select>
             </div>
             <div class="form-group">
-                <label>📅 Дата и время</label>
-                <input type="text" id="datetimePicker" name="datetime" placeholder="Выберите дату и время" required>
+                <label>📅 Дата</label>
+                <div id="calendar" class="calendar"></div>
+                <input type="hidden" name="date" id="selectedDate">
             </div>
-            <div class="price-block">
-                <span>Итого: </span><span id="totalPrice" class="price">0 ₽</span>
+            <div class="form-group">
+                <label>⏰ Время</label>
+                <div id="timeSlots" class="time-slots"></div>
+                <input type="hidden" name="time" id="selectedTime">
             </div>
+            <div id="priceDisplay" class="price">Стоимость: 0 ₽</div>
             <div id="formError" class="error-message"></div>
-            <div id="formSuccess" class="success-message"></div>
-            <div class="progress-bar" id="progressBar" style="display: none;">
-                <div class="progress-fill"></div>
-            </div>
+            <div class="progress-bar" id="progressBar" style="display:none;"><div class="progress-fill"></div></div>
             <div class="button-group">
                 <button type="submit" id="submitBtn">✅ Записаться</button>
                 <button type="button" id="resetBtn" class="btn-secondary">🗑 Очистить</button>
