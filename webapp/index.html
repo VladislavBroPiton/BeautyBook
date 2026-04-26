@@ -17,43 +17,64 @@
             <h1>BeautyBook</h1>
         </div>
         <div class="subtitle">Запись за 30 секунд</div>
+
         <form id="bookingForm">
-            <div class="form-group">
-                <label>👤 Ваше имя</label>
-                <input type="text" name="name" placeholder="Анна" required>
+            <!-- Шаг 1: Услуга и мастер -->
+            <div class="step step-1 active">
+                <div class="form-group">
+                    <label>💅 Услуга</label>
+                    <select name="service" id="serviceSelect" required>
+                        <option value="💅 Маникюр" data-price="2500">💅 Маникюр – 2500 ₽</option>
+                        <option value="🦶 Педикюр" data-price="3500">🦶 Педикюр – 3500 ₽</option>
+                        <option value="💆‍♀️ Спа-уход" data-price="4000">💆‍♀️ Спа-уход – 4000 ₽</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>💇‍♀️ Мастер</label>
+                    <select name="master" required>
+                        <option value="👩‍🦰 Анна">👩‍🦰 Анна</option>
+                        <option value="👩 Елена">👩 Елена</option>
+                        <option value="👩‍🦱 Наталья">👩‍🦱 Наталья</option>
+                    </select>
+                </div>
+                <div class="step-buttons">
+                    <button type="button" class="next-btn">Далее →</button>
+                </div>
             </div>
-            <div class="form-group">
-                <label>📞 Телефон</label>
-                <input type="tel" name="phone" placeholder="+7 999 123-45-67" required>
+
+            <!-- Шаг 2: Дата и время + свободные слоты -->
+            <div class="step step-2">
+                <div class="form-group">
+                    <label>📅 Дата и время</label>
+                    <input type="text" id="datetimePicker" name="datetime" placeholder="Выберите дату и время" required>
+                </div>
+                <div id="slotInfo" class="slot-info"></div>
+                <div class="step-buttons">
+                    <button type="button" class="prev-btn">← Назад</button>
+                    <button type="button" class="next-btn">Далее →</button>
+                </div>
             </div>
-            <div class="form-group">
-                <label>💅 Услуга</label>
-                <select name="service" id="serviceSelect">
-                    <option value="💅 Маникюр" data-price="2500">💅 Маникюр – 2500 ₽</option>
-                    <option value="🦶 Педикюр" data-price="3500">🦶 Педикюр – 3500 ₽</option>
-                    <option value="💆‍♀️ Спа-уход" data-price="4000">💆‍♀️ Спа-уход – 4000 ₽</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>💇‍♀️ Мастер</label>
-                <select name="master" required>
-                    <option value="👩‍🦰 Анна">👩‍🦰 Анна</option>
-                    <option value="👩 Елена">👩 Елена</option>
-                    <option value="👩‍🦱 Наталья">👩‍🦱 Наталья</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>📅 Дата и время</label>
-                <input type="text" id="datetimePicker" name="datetime" placeholder="Выберите дату и время" required>
-            </div>
-            <div id="totalPrice" class="price">Стоимость: 0 ₽</div>
-            <div id="formError" class="error-message"></div>
-            <div class="progress-bar" id="progressBar" style="display:none;"><div class="progress-fill"></div></div>
-            <div class="button-group">
-                <button type="submit" id="submitBtn">✅ Записаться</button>
-                <button type="button" id="resetBtn" class="btn-secondary">🗑 Очистить</button>
+
+            <!-- Шаг 3: Контакты -->
+            <div class="step step-3">
+                <div class="form-group">
+                    <label>👤 Ваше имя</label>
+                    <input type="text" name="name" placeholder="Анна" required>
+                </div>
+                <div class="form-group">
+                    <label>📞 Телефон</label>
+                    <input type="tel" name="phone" placeholder="+7 999 123-45-67" required>
+                </div>
+                <div id="totalPrice" class="price">Стоимость: 0 ₽</div>
+                <div class="step-buttons">
+                    <button type="button" class="prev-btn">← Назад</button>
+                    <button type="submit" id="submitBtn">✅ Записаться</button>
+                </div>
             </div>
         </form>
+
+        <div id="formError" class="error-message"></div>
+        <div class="progress-bar" id="progressBar" style="display:none;"><div class="progress-fill"></div></div>
     </div>
     <script src="/webapp/static/script.js"></script>
 </body>
