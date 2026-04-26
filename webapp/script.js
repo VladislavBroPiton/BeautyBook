@@ -1,9 +1,9 @@
 const tg = window.Telegram.WebApp;
 tg.ready();
 
+// ---------- Элементы ----------
 const form = document.getElementById('bookingForm');
 const submitBtn = document.getElementById('submitBtn');
-const resetBtn = document.getElementById('resetBtn');
 const errorDiv = document.getElementById('formError');
 const progressBar = document.getElementById('progressBar');
 const progressFill = progressBar.querySelector('.progress-fill');
@@ -11,6 +11,30 @@ const totalPriceSpan = document.getElementById('totalPrice');
 const serviceSelect = document.getElementById('serviceSelect');
 let flatpickrInstance = null;
 
+// ---------- Шаги формы ----------
+let currentStep = 1;
+const steps = document.querySelectorAll('.step');
+
+function showStep(step) {
+    steps.forEach((s, idx) => {
+        s.classList.toggle('active', idx === step-1);
+    });
+    currentStep = step;
+}
+
+document.querySelectorAll('.next-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        if (currentStep < steps.length) showStep(currentStep + 1);
+    });
+});
+document.querySelectorAll('.prev-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        if (currentStep > 1) showStep(currentStep - 1);
+    });
+});
+showStep(1);
+
+// ---------- Цена ----------
 function updatePrice() {
     const selected = serviceSelect.options[serviceSelect.selectedIndex];
     const price = selected.getAttribute('data-price') || 0;
@@ -19,6 +43,36 @@ function updatePrice() {
 serviceSelect.addEventListener('change', updatePrice);
 updatePrice();
 
+// ---------- Загрузка свободных слотов (AJAX) ----------
+async function loadFreeSlots() {
+    const master = document.querySelector('[name="master"]').value;
+    const dateInput = document.getElementById('datetimePicker');
+    const date = dateInput.value.split('T')[0];
+    if (!master || !date) return;
+    try {
+        const response = await fetch(`/get_slots?master=${encodeURIComponent(master)}&date=${date}`);
+        const data = await response.json();
+        const busy = data.busy || [];
+        // Генерируем все слоты с 9:00 до 20:00 с шагом 30 мин
+        const allSlots = [];
+        for (let h = 9; h <= 20; h++) {
+            for (let m = 0; m < 60; m += 30) {
+                const slot = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+                if (!busy.includes(slot)) allSlots.push(slot);
+            }
+        }
+        const slotInfo = document.getElementById('slotInfo');
+        if (allSlots.length) {
+            slotInfo.innerHTML = `<strong>🕒 Свободные слоты:</strong> ${allSlots.join(', ')}`;
+        } else {
+            slotInfo.innerHTML = `<strong>⚠️ Нет свободных слотов</strong> на эту дату. Выберите другую дату.`;
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+// ---------- Flatpickr (календарь) ----------
 function initFlatpickr() {
     const datetimeInput = document.getElementById('datetimePicker');
     if (!datetimeInput) return;
@@ -29,10 +83,14 @@ function initFlatpickr() {
         minuteIncrement: 30,
         minDate: "today",
         locale: "ru",
-        onChange: function() { saveFormData(); }
+        onChange: async (selectedDates, dateStr) => {
+            await loadFreeSlots();
+            saveFormData();
+        }
     });
 }
 
+// ---------- LocalStorage ----------
 function saveFormData() {
     const data = {
         name: form.name.value,
@@ -54,9 +112,12 @@ function loadSavedData() {
         form.master.value = data.master || '👩‍🦰 Анна';
         if (data.datetime && flatpickrInstance) flatpickrInstance.setDate(data.datetime, false);
         updatePrice();
+        // Если есть мастер и дата, подгрузим слоты
+        if (data.master && data.datetime) loadFreeSlots();
     }
 }
 
+// ---------- Валидация ----------
 function validateForm() {
     const name = form.name.value.trim();
     const phone = form.phone.value.trim();
@@ -72,6 +133,7 @@ function validateForm() {
     return null;
 }
 
+// ---------- Отправка формы ----------
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = validateForm();
@@ -118,17 +180,17 @@ form.addEventListener('submit', async (e) => {
     }
 });
 
-resetBtn.addEventListener('click', () => {
-    form.reset();
-    localStorage.removeItem('beautybook_form');
-    errorDiv.style.display = 'none';
-    progressBar.style.display = 'none';
-    if (flatpickrInstance) flatpickrInstance.clear();
-    updatePrice();
+// ---------- Сброс (кнопка, если нужна) ----------
+// Можно добавить кнопку сброса, но в дизайне её нет. При желании добавьте.
+
+// ---------- Автосохранение ----------
+form.addEventListener('input', saveFormData);
+document.querySelector('[name="master"]').addEventListener('change', () => {
+    saveFormData();
+    loadFreeSlots();
 });
 
-form.addEventListener('input', saveFormData);
-
+// ---------- Инициализация ----------
 document.addEventListener('DOMContentLoaded', () => {
     initFlatpickr();
     loadSavedData();
