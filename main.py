@@ -104,26 +104,25 @@ async def handle_webhook(request):
 async def handle_health(request):
     return web.Response(text="OK")
 
+async def webapp_index(request):
+    """Отдаём index.html при заходе на /webapp/"""
+    return web.FileResponse('webapp/index.html')
+
 # ---------- Запуск ----------
 async def main():
-    # Удаляем предыдущие вебхуки и отменяем все pending updates
     await bot.delete_webhook(drop_pending_updates=True)
 
-    # Подключаем базу данных
     DSN = os.getenv("DATABASE_URL")
     if not DSN:
         raise ValueError("DATABASE_URL missing")
     await db.create_pool(DSN)
 
-    # Настраиваем веб-приложение
     app = web.Application()
     app.router.add_get('/health', handle_health)
     app.router.add_post('/webhook', handle_webhook)
+    app.router.add_get('/webapp/', webapp_index)  # главная страница приложения
+    # Статика (css, js) раздаётся из папки webapp по пути /webapp/static/ (чтобы не пересекалось)
     app.router.add_static('/webapp/static', path='webapp/', show_index=False)
-    from aiohttp import web
-    async def webapp_index(request):
-        return web.FileResponse('webapp/index.html')
-    app.router.add_get('/webapp/', webapp_index)
 
     port = int(os.environ.get("PORT", 8000))
     runner = web.AppRunner(app)
@@ -132,12 +131,10 @@ async def main():
     await site.start()
     logger.info(f"✅ Веб-сервер запущен на порту {port}")
 
-    # Устанавливаем вебхук
     webhook_url = f"https://beautybook-bot.onrender.com/webhook"
     await bot.set_webhook(url=webhook_url)
     logger.info(f"✅ Вебхук установлен: {webhook_url}")
 
-    # Бесконечное ожидание (чтобы процесс не завершался)
     while True:
         await asyncio.sleep(3600)
 
