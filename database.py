@@ -5,6 +5,22 @@ class Database:
     def __init__(self):
         self.pool = None
 
+    async def get_appointments_by_master_telegram_id(self, master_tg_id: int):
+    async with self.pool.acquire() as conn:
+        return await conn.fetch('''
+            SELECT * FROM appointments
+            WHERE master_telegram_id = $1
+            ORDER BY appointment_date DESC, appointment_time DESC
+        ''', master_tg_id)
+
+async def get_appointment_by_id(self, app_id: int):
+    async with self.pool.acquire() as conn:
+        return await conn.fetchrow('SELECT * FROM appointments WHERE id = $1', app_id)
+
+async def delete_appointment(self, app_id: int):
+    async with self.pool.acquire() as conn:
+        await conn.execute('DELETE FROM appointments WHERE id = $1', app_id)
+
     async def create_pool(self, dsn: str):
         """Создание пула подключений к базе данных."""
         self.pool = await asyncpg.create_pool(dsn)
