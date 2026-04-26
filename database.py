@@ -12,7 +12,6 @@ class Database:
 
     async def _create_tables(self):
         async with self.pool.acquire() as conn:
-            # Таблица пользователей
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
@@ -20,7 +19,6 @@ class Database:
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
-            # Таблица записей (appointments)
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS appointments (
                     id SERIAL PRIMARY KEY,
@@ -37,7 +35,7 @@ class Database:
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
-            # Добавим цену, если колонки нет
+            # Добавляем колонку цены, если её нет
             await conn.execute('''
                 DO $$
                 BEGIN
@@ -61,7 +59,8 @@ class Database:
     async def add_appointment(self, user_id, service, service_price, master, master_telegram_id, date, time, name, phone):
         async with self.pool.acquire() as conn:
             return await conn.fetchrow('''
-                INSERT INTO appointments (user_id, service, service_price, master, master_telegram_id, appointment_date, appointment_time, client_name, client_phone)
+                INSERT INTO appointments 
+                (user_id, service, service_price, master, master_telegram_id, appointment_date, appointment_time, client_name, client_phone)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id
             ''', user_id, service, service_price, master, master_telegram_id, date, time, name, phone)
@@ -87,7 +86,6 @@ class Database:
             return await conn.fetchrow('SELECT * FROM appointments WHERE id = $1', app_id)
 
     async def update_appointment(self, app_id: int, date=None, time=None, master=None, service=None):
-        """Обновление записи (перенос)"""
         async with self.pool.acquire() as conn:
             if date and time:
                 return await conn.execute('''
