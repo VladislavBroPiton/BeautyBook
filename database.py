@@ -32,9 +32,12 @@ class Database:
                     client_name TEXT,
                     client_phone TEXT,
                     status TEXT DEFAULT 'active',
+                    reminder_day_sent BOOLEAN DEFAULT FALSE,
+                    reminder_hour_sent BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
+            # Добавляем колонку цены, если её нет
             await conn.execute('''
                 DO $$
                 BEGIN
@@ -105,3 +108,47 @@ class Database:
     async def check_master_limit(self, master_tg_id: int, date: str, limit: int = 5):
         count = await self.get_daily_appointments_count_for_master(master_tg_id, date)
         return count < limit
+
+    async def get_busy_slots_for_master(self, master_tg_id: int, date: str):
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch('''
+                SELECT appointment_time FROM appointments
+                WHERE master_telegram_id = $1 AND appointment_date = $2 AND status = 'active'
+            ''', master_tg_id, date)
+            return [row['appointment_time'].strftime("%H:%M") for row in rows]
+
+    async def get_appointments_for_reminder(self, date, reminder_type, time_threshold=None):
+        async with self.pool.acquire() as conn:
+            if reminder_type == 'day':
+                return await conn.fetch('''
+                    SELECT * FROM appointments
+                    WHERE appointment_date = $1 AND reminder_day_sent = FALSE AND status = 'active'
+                ''', date)
+            elif reminder_type == 'hour':
+                return await conn.fetch('''
+                    SELECT * FROM appointments
+                    WHERE appointment_date = $1 AND appointment_time <= $2 AND reminder_hour_sent = FALSE AND status = 'active'
+                ''', date, time_threshold)
+
+    async def mark_reminder_sent(self, app_id, reminder_type):
+        async with self.pool.acquire() as conn:
+            if reminder_type == 'day':
+                await conn.execute('UPDATE appointments SET reminder_day_sent = TRUE WHERE id = $1', app_id)
+            else:
+                await conn.execute('UPDATE appointments SET reminder_hour_sent = TRUE WHERE id = $1', app_id)
+
+    async def get_appointments_count(self):
+        async with self.pool.acquire() as conn:
+            return (await conn.fetchval('SELECT COUNT(*) FROM appointments WHERE status = "active"')) or 0
+
+    async def get_appointments_count_for_date(self, date):
+        async with self.pool.acquire() as conn:
+            return (await conn.fetchval('SELECT COUNT(*) FROM appointments WHERE appointment_date = $1 AND status = "active"', date)) or 0
+
+    async def get_appointments_grouped_by_service(self):
+        async with self.pool.acquire() as conn:
+            return await conn.fetch('SELECT service, COUNT(*) FROM appointments WHERE status = "active" GROUP BY service')
+
+    async def get_appointments_grouped_by_master(self):
+        async with self.pool.acquire() as conn:
+            return await conn.fetch('SELECT master, COUNT(*) FROM appointments WHERE status = "active" GROUP BY master')
