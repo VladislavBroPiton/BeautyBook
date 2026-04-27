@@ -265,11 +265,11 @@ async def get_slots(request):
     master = request.query.get('master')
     date = request.query.get('date')
     if not master or not date:
-        return web.json_response({"error": "Missing params"}, status=400)
+        return web.json_response({"busy": []}, status=200)
     date_clean = date.split('T')[0] if 'T' in date else date.split(' ')[0]
     master_id = MASTER_IDS.get(master)
     if not master_id:
-        return web.json_response({"error": "Master not found"}, status=404)
+        return web.json_response({"busy": []})  # мастер не найден – считаем все слоты свободными
     busy_times = await db.get_busy_slots_for_master(master_id, date_clean)
     return web.json_response({"busy": busy_times})
 
