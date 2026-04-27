@@ -82,7 +82,7 @@ function initFlatpickr() {
     if (!datetimeInput) return;
     flatpickrInstance = flatpickr(datetimeInput, {
         enableTime: true,
-        dateFormat: "Y-m-d H:i",
+        dateFormat: "Y-m-d\\TH:i",   // две обратные косые черты перед T
         time_24hr: true,
         minuteIncrement: 30,
         minDate: "today",
