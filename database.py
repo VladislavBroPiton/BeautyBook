@@ -118,7 +118,8 @@ class Database:
             return row is None
 
 async def get_busy_slots_for_master(self, master_tg_id: int, date: str):
-    # Очищаем дату от возможного времени
+    from datetime import datetime
+    # Оставляем только YYYY-MM-DD
     date_clean = date.split('T')[0] if 'T' in date else date.split(' ')[0]
     try:
         date_obj = datetime.strptime(date_clean, '%Y-%m-%d').date()
