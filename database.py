@@ -117,14 +117,19 @@ class Database:
             ''', master_tg_id, date, time)
             return row is None
 
-    async def get_busy_slots_for_master(self, master_tg_id: int, date: str):
-        date_clean = date.split('T')[0] if 'T' in date else date.split(' ')[0]
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch('''
-                SELECT appointment_time FROM appointments
-                WHERE master_telegram_id = $1 AND appointment_date = $2 AND status = 'active'
-            ''', master_tg_id, date_clean)
-            return [row['appointment_time'].strftime("%H:%M") for row in rows]
+async def get_busy_slots_for_master(self, master_tg_id: int, date: str):
+    # Очищаем дату от возможного времени
+    date_clean = date.split('T')[0] if 'T' in date else date.split(' ')[0]
+    try:
+        date_obj = datetime.strptime(date_clean, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return []
+    async with self.pool.acquire() as conn:
+        rows = await conn.fetch('''
+            SELECT appointment_time FROM appointments
+            WHERE master_telegram_id = $1 AND appointment_date = $2 AND status = 'active'
+        ''', master_tg_id, date_obj)
+        return [row['appointment_time'].strftime("%H:%M") for row in rows]
 
     async def get_appointments_for_reminder(self, date, reminder_type, time_threshold=None):
         async with self.pool.acquire() as conn:
