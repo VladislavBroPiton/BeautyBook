@@ -30,7 +30,7 @@ PRICES = {
 }
 
 MASTER_IDS = {
-    "👩‍🦰 Анна": 8658537213,     # замените на реальные ID
+    "👩‍🦰 Анна": 123456789,     # замените на реальные Telegram ID
     "👩 Елена": 987654321,
     "👩‍🦱 Наталья": 555555555,
 }
@@ -67,7 +67,13 @@ async def cmd_admin(message: types.Message):
                  f"💅 {app['service']} | 👩‍🦰 {app['master']}\n"
                  f"📅 {app['appointment_date']} {app['appointment_time']}\n"
                  f"💰 {app['service_price']} руб.\n──────────────────\n")
-    await message.answer(text, parse_mode="Markdown")
+    # Разбиваем, если сообщение слишком длинное
+    if len(text) > 4000:
+        parts = [text[i:i+4000] for i in range(0, len(text), 4000)]
+        for part in parts:
+            await message.answer(part, parse_mode="Markdown")
+    else:
+        await message.answer(text, parse_mode="Markdown")
 
 @dp.message(Command("my_records"))
 async def show_my_records(message: types.Message):
@@ -182,14 +188,22 @@ async def cmd_stats(message: types.Message):
             f"За сегодня: {today_count}\n\n"
             f"*По услугам:*\n" + "\n".join([f"{s['service']}: {s['count']}" for s in by_service]) + "\n\n"
             f"*По мастерам:*\n" + "\n".join([f"{m['master']}: {m['count']}" for m in by_master]))
-    await message.answer(text, parse_mode="Markdown")
+    if len(text) > 4000:
+        for part in [text[i:i+4000] for i in range(0, len(text), 4000)]:
+            await message.answer(part, parse_mode="Markdown")
+    else:
+        await message.answer(text, parse_mode="Markdown")
 
+# ---------- Обработка данных из Mini App ----------
 @dp.message(F.web_app_data)
 async def handle_web_app_data(message: types.Message):
     data = json.loads(message.web_app_data.data)
     user_id = message.from_user.id
+
     datetime_str = data.get('datetime', '')
-    if 'T' not in datetime_str:
+    # Нормализуем: заменяем пробел на T, если есть
+    datetime_str = datetime_str.replace(' ', 'T')
+    if 'T' not in datetime_str or len(datetime_str.split('T')) != 2:
         await message.answer("Ошибка: неверный формат даты. Попробуйте снова.")
         return
     date_part = datetime_str.split('T')[0]
@@ -232,7 +246,7 @@ async def handle_web_app_data(message: types.Message):
         logger.error(f"Calendar error: {e}")
         event_link = "Ошибка создания события"
 
-    await message.answer(f"✅ Запись подтверждена!\n\nЖдём вас {date_part} в {time_part}.\nСтоимость: {price} руб.\n")
+    await message.answer(f"✅ Запись подтверждена!\n\nЖдём вас {date_part} в {time_part}.\nСтоимость: {price} руб.")
     await bot.send_message(
         ADMIN_ID,
         f"🆕 *Новая запись!*\n"
@@ -251,7 +265,6 @@ async def get_slots(request):
     date = request.query.get('date')
     if not master or not date:
         return web.json_response({"error": "Missing params"}, status=400)
-    # Очищаем дату от времени
     date_clean = date.split('T')[0] if 'T' in date else date.split(' ')[0]
     master_id = MASTER_IDS.get(master)
     if not master_id:
@@ -287,7 +300,7 @@ async def reminders_loop():
             except Exception as e:
                 logger.error(f"Reminder error (hour): {e}")
 
-        await asyncio.sleep(60)  # каждую минуту
+        await asyncio.sleep(60)
 
 # ---------- Webhook и статика ----------
 async def handle_webhook(request):
@@ -320,7 +333,7 @@ async def main():
     app.router.add_post('/webhook', handle_webhook)
     app.router.add_get('/webapp/', webapp_index)
     app.router.add_static('/webapp/static', path='webapp/', show_index=False)
-    app.router.add_get('/get_slots', get_slots)   # эндпоинт для свободных слотов
+    app.router.add_get('/get_slots', get_slots)
 
     port = int(os.environ.get("PORT", 8000))
     runner = web.AppRunner(app)
@@ -333,7 +346,6 @@ async def main():
     await bot.set_webhook(url=webhook_url)
     logger.info(f"✅ Вебхук установлен: {webhook_url}")
 
-    # Запускаем фоновую задачу напоминаний
     asyncio.create_task(reminders_loop())
 
     while True:
