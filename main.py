@@ -19,7 +19,6 @@ dp = Dispatcher()
 db = Database()
 calendar_manager = GoogleCalendarManager(CALENDAR_ID)
 
-# ---------- Настройки ----------
 MANAGER_IDS = list(map(int, os.getenv("MANAGER_IDS", "").split(","))) if os.getenv("MANAGER_IDS") else []
 user_pagination = {}
 
@@ -30,7 +29,7 @@ PRICES = {
 }
 
 MASTER_IDS = {
-    "👩‍🦰 Анна": 123456789,     # замените на реальные Telegram ID
+    "👩‍🦰 Анна": 123456789,      # замените на реальные ID
     "👩 Елена": 987654321,
     "👩‍🦱 Наталья": 555555555,
 }
@@ -42,7 +41,6 @@ async def cmd_start(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username
     await db.add_user(user_id, username)
-
     web_app_url = os.getenv("WEBAPP_URL", "https://beautybook-bot.onrender.com/webapp/")
     keyboard = types.ReplyKeyboardMarkup(
         keyboard=[[types.KeyboardButton(text="📱 Записаться через приложение", web_app=types.WebAppInfo(url=web_app_url))]],
@@ -211,10 +209,12 @@ async def handle_web_app_data(message: types.Message):
         await message.answer("Ошибка: мастер не найден. Обновите приложение.")
         return
 
+    # Проверка лимита записей на мастера в день
     if not await db.check_master_limit(master_tg_id, date_part, DAILY_LIMIT):
         await message.answer(f"Извините, у мастера {master_name} достигнут лимит на этот день ({DAILY_LIMIT}). Выберите другую дату.")
         return
 
+    # Проверка, что конкретный слот ещё свободен
     if not await db.is_slot_available(master_tg_id, date_part, time_part):
         await message.answer("❌ Это время уже занято. Пожалуйста, выберите другой слот.")
         return
@@ -252,6 +252,7 @@ async def handle_web_app_data(message: types.Message):
         f"🆕 *Новая запись!*\n"
         f"ID: #{appointment_id}\n"
         f"Клиент: {data['name']}\n"
+        f"Телефон: {data['phone']}\n"
         f"Услуга: {service} ({price} руб.)\n"
         f"Мастер: {master_name}\n"
         f"Дата и время: {date_part} {time_part}\n"
@@ -259,7 +260,7 @@ async def handle_web_app_data(message: types.Message):
         parse_mode="Markdown"
     )
 
-# ---------- Эндпоинт для получения свободных слотов (AJAX) ----------
+# ---------- Эндпоинт для получения свободных слотов ----------
 async def get_slots(request):
     master = request.query.get('master')
     date = request.query.get('date')
@@ -272,7 +273,7 @@ async def get_slots(request):
     busy_times = await db.get_busy_slots_for_master(master_id, date_clean)
     return web.json_response({"busy": busy_times})
 
-# ---------- Фоновая задача напоминаний ----------
+# ---------- Напоминания ----------
 async def reminders_loop():
     while True:
         now = datetime.now()
@@ -288,7 +289,7 @@ async def reminders_loop():
                 await bot.send_message(app['user_id'], f"🔔 Напоминаем, что завтра в {app['appointment_time']} у вас запись на {app['service']}.")
                 await db.mark_reminder_sent(app['id'], 'day')
             except Exception as e:
-                logger.error(f"Reminder error (day): {e}")
+                logger.error(f"Reminder day: {e}")
 
         hour_appointments = await db.get_appointments_for_reminder(today_str, 'hour', next_hour_str)
         for app in hour_appointments:
@@ -296,7 +297,7 @@ async def reminders_loop():
                 await bot.send_message(app['user_id'], f"🔔 Через час у вас запись на {app['service']} в {app['appointment_time']}.")
                 await db.mark_reminder_sent(app['id'], 'hour')
             except Exception as e:
-                logger.error(f"Reminder error (hour): {e}")
+                logger.error(f"Reminder hour: {e}")
 
         await asyncio.sleep(60)
 
