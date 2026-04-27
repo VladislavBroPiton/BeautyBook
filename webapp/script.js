@@ -9,28 +9,21 @@ const progressFill = progressBar.querySelector('.progress-fill');
 const totalPriceSpan = document.getElementById('totalPrice');
 const serviceSelect = document.getElementById('serviceSelect');
 let flatpickrInstance = null;
+let refreshInterval = null;
 
-// Шаги формы
+// Шаги
 let currentStep = 1;
 const steps = document.querySelectorAll('.step');
-
 function showStep(step) {
-    steps.forEach((s, idx) => {
-        s.classList.toggle('active', idx === step-1);
-    });
+    steps.forEach((s, idx) => s.classList.toggle('active', idx === step-1));
     currentStep = step;
 }
-
-document.querySelectorAll('.next-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        if (currentStep < steps.length) showStep(currentStep + 1);
-    });
-});
-document.querySelectorAll('.prev-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        if (currentStep > 1) showStep(currentStep - 1);
-    });
-});
+document.querySelectorAll('.next-btn').forEach(btn => btn.addEventListener('click', () => {
+    if (currentStep < steps.length) showStep(currentStep + 1);
+}));
+document.querySelectorAll('.prev-btn').forEach(btn => btn.addEventListener('click', () => {
+    if (currentStep > 1) showStep(currentStep - 1);
+}));
 showStep(1);
 
 function updatePrice() {
@@ -85,6 +78,13 @@ function initFlatpickr() {
             saveFormData();
         }
     });
+    // Автообновление слотов каждые 30 секунд
+    if (refreshInterval) clearInterval(refreshInterval);
+    refreshInterval = setInterval(() => {
+        if (flatpickrInstance && flatpickrInstance.selectedDates.length) {
+            loadFreeSlots();
+        }
+    }, 30000);
 }
 
 function saveFormData() {
@@ -150,10 +150,8 @@ form.addEventListener('submit', async (e) => {
         }
     }, 100);
 
-    // Нормализуем дату (меняем пробел на T)
     let datetime = form.datetime.value;
     if (datetime.includes(' ')) datetime = datetime.replace(' ', 'T');
-
     const formData = {
         name: form.name.value.trim(),
         phone: form.phone.value.trim(),
@@ -187,4 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initFlatpickr();
     loadSavedData();
     tg.expand();
+});
+window.addEventListener('beforeunload', () => {
+    if (refreshInterval) clearInterval(refreshInterval);
 });
