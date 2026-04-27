@@ -30,7 +30,7 @@ PRICES = {
 }
 
 MASTER_IDS = {
-    "👩‍🦰 Анна": 8658537213,     # замените на реальные Telegram ID
+    "👩‍🦰 Анна": 123456789,     # замените на реальные Telegram ID
     "👩 Елена": 987654321,
     "👩‍🦱 Наталья": 555555555,
 }
@@ -67,10 +67,8 @@ async def cmd_admin(message: types.Message):
                  f"💅 {app['service']} | 👩‍🦰 {app['master']}\n"
                  f"📅 {app['appointment_date']} {app['appointment_time']}\n"
                  f"💰 {app['service_price']} руб.\n──────────────────\n")
-    # Разбиваем, если сообщение слишком длинное
     if len(text) > 4000:
-        parts = [text[i:i+4000] for i in range(0, len(text), 4000)]
-        for part in parts:
+        for part in [text[i:i+4000] for i in range(0, len(text), 4000)]:
             await message.answer(part, parse_mode="Markdown")
     else:
         await message.answer(text, parse_mode="Markdown")
@@ -200,9 +198,7 @@ async def handle_web_app_data(message: types.Message):
     data = json.loads(message.web_app_data.data)
     user_id = message.from_user.id
 
-    datetime_str = data.get('datetime', '')
-    # Нормализуем: заменяем пробел на T, если есть
-    datetime_str = datetime_str.replace(' ', 'T')
+    datetime_str = data.get('datetime', '').replace(' ', 'T')
     if 'T' not in datetime_str or len(datetime_str.split('T')) != 2:
         await message.answer("Ошибка: неверный формат даты. Попробуйте снова.")
         return
@@ -217,6 +213,10 @@ async def handle_web_app_data(message: types.Message):
 
     if not await db.check_master_limit(master_tg_id, date_part, DAILY_LIMIT):
         await message.answer(f"Извините, у мастера {master_name} достигнут лимит на этот день ({DAILY_LIMIT}). Выберите другую дату.")
+        return
+
+    if not await db.is_slot_available(master_tg_id, date_part, time_part):
+        await message.answer("❌ Это время уже занято. Пожалуйста, выберите другой слот.")
         return
 
     service = data['service']
@@ -282,7 +282,6 @@ async def reminders_loop():
         tomorrow_str = tomorrow.strftime("%Y-%m-%d")
         next_hour_str = next_hour.strftime("%H:%M")
 
-        # За день
         day_appointments = await db.get_appointments_for_reminder(tomorrow_str, 'day')
         for app in day_appointments:
             try:
@@ -291,7 +290,6 @@ async def reminders_loop():
             except Exception as e:
                 logger.error(f"Reminder error (day): {e}")
 
-        # За час
         hour_appointments = await db.get_appointments_for_reminder(today_str, 'hour', next_hour_str)
         for app in hour_appointments:
             try:
