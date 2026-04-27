@@ -1,7 +1,6 @@
 const tg = window.Telegram.WebApp;
 tg.ready();
 
-// ---------- Элементы ----------
 const form = document.getElementById('bookingForm');
 const submitBtn = document.getElementById('submitBtn');
 const errorDiv = document.getElementById('formError');
@@ -11,7 +10,7 @@ const totalPriceSpan = document.getElementById('totalPrice');
 const serviceSelect = document.getElementById('serviceSelect');
 let flatpickrInstance = null;
 
-// ---------- Шаги формы ----------
+// Шаги формы
 let currentStep = 1;
 const steps = document.querySelectorAll('.step');
 
@@ -34,7 +33,6 @@ document.querySelectorAll('.prev-btn').forEach(btn => {
 });
 showStep(1);
 
-// ---------- Цена ----------
 function updatePrice() {
     const selected = serviceSelect.options[serviceSelect.selectedIndex];
     const price = selected.getAttribute('data-price') || 0;
@@ -43,15 +41,11 @@ function updatePrice() {
 serviceSelect.addEventListener('change', updatePrice);
 updatePrice();
 
-// ---------- Загрузка свободных слотов (AJAX) ----------
 async function loadFreeSlots() {
     const master = document.querySelector('[name="master"]').value;
-    const dateInput = document.getElementById('datetimePicker');
-    let date = dateInput.value;
-    if (!date) return;
-    // Оставляем только дату (YYYY-MM-DD)
-    if (date.includes('T')) date = date.split('T')[0];
-    if (date.includes(' ')) date = date.split(' ')[0];
+    const datetimeVal = document.getElementById('datetimePicker').value;
+    if (!datetimeVal) return;
+    const date = datetimeVal.split('T')[0];
     if (!master || !date) return;
     try {
         const response = await fetch(`/get_slots?master=${encodeURIComponent(master)}&date=${date}`);
@@ -76,13 +70,12 @@ async function loadFreeSlots() {
     }
 }
 
-// ---------- Flatpickr (календарь) ----------
 function initFlatpickr() {
     const datetimeInput = document.getElementById('datetimePicker');
     if (!datetimeInput) return;
     flatpickrInstance = flatpickr(datetimeInput, {
         enableTime: true,
-        dateFormat: "Y-m-d\\TH:i",   // две обратные косые черты перед T
+        dateFormat: "Y-m-d\\TH:i",
         time_24hr: true,
         minuteIncrement: 30,
         minDate: "today",
@@ -94,7 +87,6 @@ function initFlatpickr() {
     });
 }
 
-// ---------- LocalStorage ----------
 function saveFormData() {
     const data = {
         name: form.name.value,
@@ -116,12 +108,10 @@ function loadSavedData() {
         form.master.value = data.master || '👩‍🦰 Анна';
         if (data.datetime && flatpickrInstance) flatpickrInstance.setDate(data.datetime, false);
         updatePrice();
-        // Если есть мастер и дата, подгрузим слоты
         if (data.master && data.datetime) loadFreeSlots();
     }
 }
 
-// ---------- Валидация ----------
 function validateForm() {
     const name = form.name.value.trim();
     const phone = form.phone.value.trim();
@@ -137,7 +127,6 @@ function validateForm() {
     return null;
 }
 
-// ---------- Отправка формы ----------
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = validateForm();
@@ -161,12 +150,16 @@ form.addEventListener('submit', async (e) => {
         }
     }, 100);
 
+    // Нормализуем дату (меняем пробел на T)
+    let datetime = form.datetime.value;
+    if (datetime.includes(' ')) datetime = datetime.replace(' ', 'T');
+
     const formData = {
         name: form.name.value.trim(),
         phone: form.phone.value.trim(),
         service: form.service.value,
         master: form.master.value,
-        datetime: form.datetime.value
+        datetime: datetime
     };
     try {
         tg.sendData(JSON.stringify(formData));
@@ -184,17 +177,12 @@ form.addEventListener('submit', async (e) => {
     }
 });
 
-// ---------- Сброс (кнопка, если нужна) ----------
-// Можно добавить кнопку сброса, но в дизайне её нет. При желании добавьте.
-
-// ---------- Автосохранение ----------
 form.addEventListener('input', saveFormData);
 document.querySelector('[name="master"]').addEventListener('change', () => {
     saveFormData();
     loadFreeSlots();
 });
 
-// ---------- Инициализация ----------
 document.addEventListener('DOMContentLoaded', () => {
     initFlatpickr();
     loadSavedData();
