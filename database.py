@@ -1,5 +1,5 @@
 import asyncpg
-from datetime import datetime
+from datetime import datetime, time
 
 class Database:
     def __init__(self):
@@ -12,7 +12,6 @@ class Database:
 
     async def _create_tables(self):
         async with self.pool.acquire() as conn:
-            # Таблица пользователей
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
@@ -20,7 +19,6 @@ class Database:
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
-            # Таблица записей
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS appointments (
                     id SERIAL PRIMARY KEY,
@@ -39,7 +37,6 @@ class Database:
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
-            # Добавляем колонку цены, если её нет
             await conn.execute('''
                 DO $$
                 BEGIN
@@ -51,7 +48,6 @@ class Database:
                 $$;
             ''')
 
-    # ---------- Пользователи ----------
     async def add_user(self, user_id: int, username: str = None):
         async with self.pool.acquire() as conn:
             await conn.execute('''
@@ -59,15 +55,16 @@ class Database:
                 ON CONFLICT (user_id) DO NOTHING
             ''', user_id, username)
 
-    # ---------- Записи ----------
-    async def add_appointment(self, user_id, service, service_price, master, master_telegram_id, date, time, name, phone):
+    async def add_appointment(self, user_id, service, service_price, master, master_telegram_id, date_str, time_str, name, phone):
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+        time_obj = datetime.strptime(time_str, '%H:%M').time()
         async with self.pool.acquire() as conn:
             return await conn.fetchrow('''
                 INSERT INTO appointments 
                 (user_id, service, service_price, master, master_telegram_id, appointment_date, appointment_time, client_name, client_phone)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id
-            ''', user_id, service, service_price, master, master_telegram_id, date, time, name, phone)
+            ''', user_id, service, service_price, master, master_telegram_id, date_obj, time_obj, name, phone)
 
     async def get_appointments_by_master_telegram_id(self, master_tg_id: int):
         async with self.pool.acquire() as conn:
@@ -101,7 +98,6 @@ class Database:
                 ORDER BY a.appointment_date DESC, a.appointment_time DESC
             ''')
 
-    # ---------- Работа с датами (все методы безопасно преобразуют строку в date) ----------
     async def get_daily_appointments_count_for_master(self, master_tg_id: int, date_str: str):
         date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
         async with self.pool.acquire() as conn:
@@ -117,15 +113,15 @@ class Database:
 
     async def is_slot_available(self, master_tg_id: int, date_str: str, time_str: str):
         date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+        time_obj = datetime.strptime(time_str, '%H:%M').time()
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow('''
                 SELECT id FROM appointments
                 WHERE master_telegram_id = $1 AND appointment_date = $2 AND appointment_time = $3 AND status = 'active'
-            ''', master_tg_id, date_obj, time_str)
+            ''', master_tg_id, date_obj, time_obj)
             return row is None
 
     async def get_busy_slots_for_master(self, master_tg_id: int, date_str: str):
-        # Очищаем строку от возможного времени
         date_clean = date_str.split('T')[0] if 'T' in date_str else date_str.split(' ')[0]
         try:
             date_obj = datetime.strptime(date_clean, '%Y-%m-%d').date()
@@ -138,7 +134,6 @@ class Database:
             ''', master_tg_id, date_obj)
             return [row['appointment_time'].strftime("%H:%M") for row in rows]
 
-    # ---------- Напоминания ----------
     async def get_appointments_for_reminder(self, date_str: str, reminder_type: str, time_threshold: str = None):
         try:
             date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -163,7 +158,6 @@ class Database:
             else:
                 await conn.execute('UPDATE appointments SET reminder_hour_sent = TRUE WHERE id = $1', app_id)
 
-    # ---------- Статистика ----------
     async def get_appointments_count(self):
         async with self.pool.acquire() as conn:
             return (await conn.fetchval('SELECT COUNT(*) FROM appointments WHERE status = "active"')) or 0
