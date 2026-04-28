@@ -10,7 +10,9 @@ const totalPriceSpan = document.getElementById('totalPrice');
 const serviceSelect = document.getElementById('serviceSelect');
 let flatpickrInstance = null;
 let refreshInterval = null;
-let masterRefreshInterval = null;
+
+// --- Мастер-режим переменные ---
+let masterRefreshInterval = null;   // новое: автообновление мастер-списка
 
 // Шаги формы
 let currentStep = 1;
@@ -75,10 +77,8 @@ async function loadFreeSlots() {
 }
 
 function startAutoRefresh() {
-    console.log('🔄 startAutoRefresh');
     if (refreshInterval) clearInterval(refreshInterval);
     refreshInterval = setInterval(() => {
-        console.log('⏰ Автообновление слотов...');
         const picker = document.getElementById('datetimePicker');
         if (picker && picker.value) loadFreeSlots();
     }, 5000);
@@ -140,6 +140,7 @@ function loadSavedData() {
     }
 }
 
+// Валидация и отправка клиентской формы
 function validateForm() {
     const name = form.name.value.trim();
     const phone = form.phone.value.trim();
@@ -154,7 +155,6 @@ function validateForm() {
     return null;
 }
 
-// Отправка формы (клиент)
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = validateForm();
@@ -215,7 +215,7 @@ document.querySelector('[name="master"]').addEventListener('change', () => {
 
 window.addEventListener('beforeunload', stopAutoRefresh);
 
-// ---------- НОВОЕ: МАСТЕР-РЕЖИМ ----------
+// ---------- МАСТЕР-РЕЖИМ ----------
 const masterSection = document.getElementById('masterSection');
 const showMasterBtn = document.getElementById('showMasterBtn');
 const masterLogin = document.getElementById('masterLogin');
@@ -239,17 +239,19 @@ showMasterBtn.addEventListener('click', () => {
         masterSection.style.display = 'none';
         form.style.display = 'block';
         masterActive = false;
+        stopMasterAutoRefresh();   // останавливаем обновление при выходе
     }
 });
 
+// Обработчик входа
 masterLoginBtn.addEventListener('click', async () => {
     const password = masterPassword.value.trim();
     if (!password) return;
 
-    // Пытаемся получить ID автоматически
+    // Пробуем получить ID автоматически
     let userId = tg.initDataUnsafe?.user?.id;
     
-    // Если не получилось — запрашиваем вручную
+    // Если не получилось — запрос вручную
     if (!userId) {
         userId = prompt('Не удалось определить ваш Telegram ID.\nПожалуйста, введите его вручную:');
         if (!userId) return;
@@ -275,6 +277,7 @@ masterLoginBtn.addEventListener('click', async () => {
             masterLogin.style.display = 'none';
             masterContent.style.display = 'block';
             loadMasterAppointments(password, userId);
+            startMasterAutoRefresh(password, userId);   // запускаем автообновление
         } else {
             alert(data.error || 'Ошибка входа');
         }
@@ -283,6 +286,7 @@ masterLoginBtn.addEventListener('click', async () => {
     }
 });
 
+// Загрузка списка записей мастера
 async function loadMasterAppointments(password, userId) {
     try {
         const resp = await fetch('/master_api', {
@@ -305,6 +309,7 @@ async function loadMasterAppointments(password, userId) {
     }
 }
 
+// Отображение записей в виде карточек
 function renderMasterAppointments(appointments) {
     if (!appointments.length) {
         masterAppointmentsDiv.innerHTML = '<p>Нет активных записей</p>';
@@ -321,11 +326,13 @@ function renderMasterAppointments(appointments) {
         </div>`;
     });
     masterAppointmentsDiv.innerHTML = html;
+
+    // Навешиваем обработчики на кнопки отмены
     document.querySelectorAll('.cancel-appointment-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const id = e.target.getAttribute('data-id');
             if (confirm('Отменить запись?')) {
-                const userId = tg.initDataUnsafe?.user?.id;
+                const userId = tg.initDataUnsafe?.user?.id || parseInt(prompt('Введите ваш Telegram ID для подтверждения отмены:'));
                 const password = masterPassword.value.trim();
                 const resp = await fetch('/master_api', {
                     method: 'POST',
@@ -335,26 +342,43 @@ function renderMasterAppointments(appointments) {
                         appointment_id: id,
                         password,
                         user_id: userId
-        })
-    });
-    const data = await resp.json();
-    if (data.success) {
-        loadMasterAppointments(password, userId);
-    } else {
-        alert(data.error || 'Не удалось отменить');
-    }
-}
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    loadMasterAppointments(password, userId);   // обновится список, старые исчезнут
+                } else {
+                    alert(data.error || 'Не удалось отменить');
+                }
+            }
         });
     });
 }
 
+// Автообновление списка записей мастера
+function startMasterAutoRefresh(password, userId) {
+    stopMasterAutoRefresh();
+    masterRefreshInterval = setInterval(() => {
+        loadMasterAppointments(password, userId);
+    }, 30000); // каждые 30 секунд
+}
+
+function stopMasterAutoRefresh() {
+    if (masterRefreshInterval) {
+        clearInterval(masterRefreshInterval);
+        masterRefreshInterval = null;
+    }
+}
+
+// Выход из мастер-панели
 masterLogoutBtn.addEventListener('click', () => {
     masterContent.style.display = 'none';
     masterLogin.style.display = 'block';
     masterPassword.value = '';
+    stopMasterAutoRefresh();
 });
 
-// Инициализация при загрузке
+// Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     initFlatpickr();
     loadSavedData();
