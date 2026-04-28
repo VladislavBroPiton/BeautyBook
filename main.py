@@ -300,8 +300,8 @@ async def master_api(request):
         if password != MASTER_PASSWORD:
             return web.json_response({"success": False, "error": "Неверный пароль"}, status=403)
 
-        if not verify_init_data(init_data):
-            return web.json_response({"success": False, "error": "Ошибка валидации Telegram"}, status=403)
+        # if not verify_init_data(init_data):
+        #    return web.json_response({"success": False, "error": "Ошибка валидации Telegram"}, status=403)
 
         user_data = dict(pair.split('=') for pair in init_data.split('&') if '=' in pair)
         user_id = int(user_data.get('user_id', 0))
