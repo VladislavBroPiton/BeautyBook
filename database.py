@@ -12,6 +12,7 @@ class Database:
 
     async def _create_tables(self):
         async with self.pool.acquire() as conn:
+            # Таблица пользователей
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
@@ -19,6 +20,7 @@ class Database:
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
+            # Таблица записей
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS appointments (
                     id SERIAL PRIMARY KEY,
@@ -49,6 +51,7 @@ class Database:
                 $$;
             ''')
 
+    # ---------- Пользователи ----------
     async def add_user(self, user_id: int, username: str = None):
         async with self.pool.acquire() as conn:
             await conn.execute('''
@@ -56,6 +59,7 @@ class Database:
                 ON CONFLICT (user_id) DO NOTHING
             ''', user_id, username)
 
+    # ---------- Записи ----------
     async def add_appointment(self, user_id, service, service_price, master, master_telegram_id, date, time, name, phone):
         async with self.pool.acquire() as conn:
             return await conn.fetchrow('''
@@ -97,68 +101,77 @@ class Database:
                 ORDER BY a.appointment_date DESC, a.appointment_time DESC
             ''')
 
-    async def get_daily_appointments_count_for_master(self, master_tg_id: int, date: str):
+    # ---------- Работа с датами (все методы безопасно преобразуют строку в date) ----------
+    async def get_daily_appointments_count_for_master(self, master_tg_id: int, date_str: str):
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow('''
                 SELECT COUNT(*) FROM appointments
                 WHERE master_telegram_id = $1 AND appointment_date = $2 AND status = 'active'
-            ''', master_tg_id, date)
+            ''', master_tg_id, date_obj)
             return row[0] if row else 0
 
-    async def check_master_limit(self, master_tg_id: int, date: str, limit: int = 5):
-        count = await self.get_daily_appointments_count_for_master(master_tg_id, date)
+    async def check_master_limit(self, master_tg_id: int, date_str: str, limit: int = 5):
+        count = await self.get_daily_appointments_count_for_master(master_tg_id, date_str)
         return count < limit
 
-    async def is_slot_available(self, master_tg_id: int, date: str, time: str):
+    async def is_slot_available(self, master_tg_id: int, date_str: str, time_str: str):
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow('''
                 SELECT id FROM appointments
                 WHERE master_telegram_id = $1 AND appointment_date = $2 AND appointment_time = $3 AND status = 'active'
-            ''', master_tg_id, date, time)
+            ''', master_tg_id, date_obj, time_str)
             return row is None
 
-async def get_busy_slots_for_master(self, master_tg_id: int, date: str):
-    from datetime import datetime
-    # Оставляем только YYYY-MM-DD
-    date_clean = date.split('T')[0] if 'T' in date else date.split(' ')[0]
-    try:
-        date_obj = datetime.strptime(date_clean, '%Y-%m-%d').date()
-    except (ValueError, TypeError):
-        return []
-    async with self.pool.acquire() as conn:
-        rows = await conn.fetch('''
-            SELECT appointment_time FROM appointments
-            WHERE master_telegram_id = $1 AND appointment_date = $2 AND status = 'active'
-        ''', master_tg_id, date_obj)
-        return [row['appointment_time'].strftime("%H:%M") for row in rows]
+    async def get_busy_slots_for_master(self, master_tg_id: int, date_str: str):
+        # Очищаем строку от возможного времени
+        date_clean = date_str.split('T')[0] if 'T' in date_str else date_str.split(' ')[0]
+        try:
+            date_obj = datetime.strptime(date_clean, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            return []
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch('''
+                SELECT appointment_time FROM appointments
+                WHERE master_telegram_id = $1 AND appointment_date = $2 AND status = 'active'
+            ''', master_tg_id, date_obj)
+            return [row['appointment_time'].strftime("%H:%M") for row in rows]
 
-    async def get_appointments_for_reminder(self, date, reminder_type, time_threshold=None):
+    # ---------- Напоминания ----------
+    async def get_appointments_for_reminder(self, date_str: str, reminder_type: str, time_threshold: str = None):
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except:
+            return []
         async with self.pool.acquire() as conn:
             if reminder_type == 'day':
                 return await conn.fetch('''
                     SELECT * FROM appointments
                     WHERE appointment_date = $1 AND reminder_day_sent = FALSE AND status = 'active'
-                ''', date)
+                ''', date_obj)
             elif reminder_type == 'hour':
                 return await conn.fetch('''
                     SELECT * FROM appointments
                     WHERE appointment_date = $1 AND appointment_time <= $2 AND reminder_hour_sent = FALSE AND status = 'active'
-                ''', date, time_threshold)
+                ''', date_obj, time_threshold)
 
-    async def mark_reminder_sent(self, app_id, reminder_type):
+    async def mark_reminder_sent(self, app_id: int, reminder_type: str):
         async with self.pool.acquire() as conn:
             if reminder_type == 'day':
                 await conn.execute('UPDATE appointments SET reminder_day_sent = TRUE WHERE id = $1', app_id)
             else:
                 await conn.execute('UPDATE appointments SET reminder_hour_sent = TRUE WHERE id = $1', app_id)
 
+    # ---------- Статистика ----------
     async def get_appointments_count(self):
         async with self.pool.acquire() as conn:
             return (await conn.fetchval('SELECT COUNT(*) FROM appointments WHERE status = "active"')) or 0
 
-    async def get_appointments_count_for_date(self, date):
+    async def get_appointments_count_for_date(self, date_str: str):
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
         async with self.pool.acquire() as conn:
-            return (await conn.fetchval('SELECT COUNT(*) FROM appointments WHERE appointment_date = $1 AND status = "active"', date)) or 0
+            return (await conn.fetchval('SELECT COUNT(*) FROM appointments WHERE appointment_date = $1 AND status = "active"', date_obj)) or 0
 
     async def get_appointments_grouped_by_service(self):
         async with self.pool.acquire() as conn:
