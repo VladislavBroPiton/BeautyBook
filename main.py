@@ -307,7 +307,10 @@ async def master_api(request):
         user_id = int(user_data.get('user_id', 0))
 
         if not user_id or user_id not in MANAGER_IDS:
-            return web.json_response({"success": False, "error": "Нет доступа"}, status=403)
+            return web.json_response({
+                "success": False,
+                "error": f"Нет доступа. Твой ID: {user_id}. Допустимые: {MANAGER_IDS}"
+            }, status=403)
 
         if action == "login":
             return web.json_response({"success": True, "user_id": user_id})
