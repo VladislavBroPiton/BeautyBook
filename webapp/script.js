@@ -9,7 +9,7 @@ const progressFill = progressBar.querySelector('.progress-fill');
 const totalPriceSpan = document.getElementById('totalPrice');
 const serviceSelect = document.getElementById('serviceSelect');
 let flatpickrInstance = null;
-let refreshInterval = null; // для хранения интервала
+let refreshInterval = null;
 
 // Шаги формы
 let currentStep = 1;
@@ -42,9 +42,9 @@ function updatePrice() {
 serviceSelect.addEventListener('change', updatePrice);
 updatePrice();
 
-// Функция загрузки свободных слотов (уже была, но немного улучшим)
+// Загрузка свободных слотов
 async function loadFreeSlots() {
-    console.log('📡 loadFreeSlots вызвана, мастер:', document.querySelector('[name="master"]').value, 'дата:', document.getElementById('datetimePicker').value);
+    console.log('📡 loadFreeSlots вызвана');
     const master = document.querySelector('[name="master"]').value;
     const datetimeVal = document.getElementById('datetimePicker').value;
     if (!datetimeVal) return;
@@ -65,7 +65,7 @@ async function loadFreeSlots() {
         if (allSlots.length) {
             slotInfo.innerHTML = `<strong>🕒 Свободные слоты:</strong> ${allSlots.join(', ')}`;
         } else {
-            slotInfo.innerHTML = `<strong>⚠️ Нет свободных слотов</strong> на эту дату. Выберите другую дату.`;
+            slotInfo.innerHTML = `<strong>⚠️ Нет свободных слотов</strong> на эту дату.`;
         }
     } catch (err) {
         console.error(err);
@@ -73,20 +73,16 @@ async function loadFreeSlots() {
     }
 }
 
-// Функция для запуска автообновления (каждые 10 секунд)
 function startAutoRefresh() {
-    console.log('🔄 startAutoRefresh вызвана');
+    console.log('🔄 startAutoRefresh');
     if (refreshInterval) clearInterval(refreshInterval);
     refreshInterval = setInterval(() => {
-        console.log('⏰ Автообновление слотов...');  // внутри интервала
-        const datetimePicker = document.getElementById('datetimePicker');
-        if (datetimePicker && datetimePicker.value) {
-            loadFreeSlots();
-        }
+        console.log('⏰ Автообновление слотов...');
+        const picker = document.getElementById('datetimePicker');
+        if (picker && picker.value) loadFreeSlots();
     }, 5000);
 }
 
-// Остановка автообновления
 function stopAutoRefresh() {
     if (refreshInterval) {
         clearInterval(refreshInterval);
@@ -94,7 +90,7 @@ function stopAutoRefresh() {
     }
 }
 
-// Инициализация Flatpickr с автообновлением
+// Flatpickr
 function initFlatpickr() {
     const datetimeInput = document.getElementById('datetimePicker');
     if (!datetimeInput) return;
@@ -106,14 +102,15 @@ function initFlatpickr() {
         minDate: "today",
         locale: "ru",
         onChange: async (selectedDates, dateStr) => {
-            console.log('📅 Выбрана новая дата/время:', dateStr);
+            console.log('📅 Выбрана дата/время:', dateStr);
             await loadFreeSlots();
-            startAutoRefresh(); // запускаем автообновление после выбора даты
+            startAutoRefresh();
             saveFormData();
         }
     });
 }
 
+// Сохранение и восстановление
 function saveFormData() {
     const data = {
         name: form.name.value,
@@ -136,7 +133,6 @@ function loadSavedData() {
         if (data.datetime && flatpickrInstance) flatpickrInstance.setDate(data.datetime, false);
         updatePrice();
         if (data.master && data.datetime) {
-            console.log('💾 Загружены сохранённые данные, запускаем автообновление');
             loadFreeSlots();
             startAutoRefresh();
         }
@@ -153,11 +149,11 @@ function validateForm() {
     if (!phoneRegex.test(phone)) return "Некорректный номер телефона";
     if (!datetime) return "Выберите дату и время";
     const selected = new Date(datetime);
-    const now = new Date();
-    if (selected < now) return "Дата не может быть в прошлом";
+    if (selected < new Date()) return "Дата не может быть в прошлом";
     return null;
 }
 
+// Отправка формы (клиент)
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = validateForm();
@@ -205,23 +201,132 @@ form.addEventListener('submit', async (e) => {
         submitBtn.disabled = false;
         submitBtn.textContent = '✅ Записаться';
     } finally {
-        stopAutoRefresh(); // останавливаем обновление при отправке
+        stopAutoRefresh();
     }
 });
 
 form.addEventListener('input', saveFormData);
 document.querySelector('[name="master"]').addEventListener('change', () => {
-    console.log('👩‍🦰 Сменился мастер, обновляем слоты');
     saveFormData();
     loadFreeSlots();
-    startAutoRefresh(); // перезапускаем автообновление при смене мастера
+    startAutoRefresh();
 });
 
-// Останавливаем интервал, если пользователь закрыл приложение
-window.addEventListener('beforeunload', () => {
-    stopAutoRefresh();
+window.addEventListener('beforeunload', stopAutoRefresh);
+
+// ---------- НОВОЕ: МАСТЕР-РЕЖИМ ----------
+const masterSection = document.getElementById('masterSection');
+const showMasterBtn = document.getElementById('showMasterBtn');
+const masterLogin = document.getElementById('masterLogin');
+const masterContent = document.getElementById('masterContent');
+const masterPassword = document.getElementById('masterPassword');
+const masterLoginBtn = document.getElementById('masterLoginBtn');
+const masterAppointmentsDiv = document.getElementById('masterAppointments');
+const masterLogoutBtn = document.getElementById('masterLogoutBtn');
+
+let masterActive = false;
+
+showMasterBtn.addEventListener('click', () => {
+    if (!masterActive) {
+        form.style.display = 'none';
+        masterSection.style.display = 'block';
+        masterLogin.style.display = 'block';
+        masterContent.style.display = 'none';
+        masterPassword.value = '';
+        masterActive = true;
+    } else {
+        masterSection.style.display = 'none';
+        form.style.display = 'block';
+        masterActive = false;
+    }
 });
 
+masterLoginBtn.addEventListener('click', async () => {
+    const password = masterPassword.value.trim();
+    if (!password) return;
+    const initData = tg.initData || '';
+    try {
+        const resp = await fetch('/master_api', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'login', password, initData})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            masterLogin.style.display = 'none';
+            masterContent.style.display = 'block';
+            loadMasterAppointments(password, initData);
+        } else {
+            alert(data.error || 'Ошибка входа');
+        }
+    } catch (e) {
+        alert('Сетевая ошибка');
+    }
+});
+
+async function loadMasterAppointments(password, initData) {
+    try {
+        const resp = await fetch('/master_api', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'list', password, initData})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            renderMasterAppointments(data.appointments || []);
+        } else {
+            alert(data.error);
+        }
+    } catch (e) {
+        alert('Ошибка загрузки');
+    }
+}
+
+function renderMasterAppointments(appointments) {
+    if (!appointments.length) {
+        masterAppointmentsDiv.innerHTML = '<p>Нет активных записей</p>';
+        return;
+    }
+    let html = '';
+    appointments.forEach(app => {
+        html += `
+        <div class="appointment-card">
+            <div><strong>${app.date} ${app.time}</strong> - ${app.service}</div>
+            <div>Клиент: ${app.client_name} | ${app.client_phone}</div>
+            <div>Цена: ${app.price} руб.</div>
+            <button class="cancel-appointment-btn" data-id="${app.id}">Отменить</button>
+        </div>`;
+    });
+    masterAppointmentsDiv.innerHTML = html;
+    document.querySelectorAll('.cancel-appointment-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const id = e.target.getAttribute('data-id');
+            if (confirm('Отменить запись?')) {
+                const initData = tg.initData || '';
+                const password = masterPassword.value.trim();
+                const resp = await fetch('/master_api', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'cancel', appointment_id: id, password, initData})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    loadMasterAppointments(password, initData);
+                } else {
+                    alert(data.error || 'Не удалось отменить');
+                }
+            }
+        });
+    });
+}
+
+masterLogoutBtn.addEventListener('click', () => {
+    masterContent.style.display = 'none';
+    masterLogin.style.display = 'block';
+    masterPassword.value = '';
+});
+
+// Инициализация при загрузке
 document.addEventListener('DOMContentLoaded', () => {
     initFlatpickr();
     loadSavedData();
