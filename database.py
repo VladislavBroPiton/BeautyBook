@@ -55,9 +55,10 @@ class Database:
                 ON CONFLICT (user_id) DO NOTHING
             ''', user_id, username)
 
-    async def add_appointment(self, user_id, service, service_price, master, master_telegram_id, date_str, time_str, name, phone):
-        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-        time_obj = datetime.strptime(time_str, '%H:%M').time()
+    # Исправленный метод add_appointment: имена параметров date, time
+    async def add_appointment(self, user_id, service, service_price, master, master_telegram_id, date, time, name, phone):
+        date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+        time_obj = datetime.strptime(time, '%H:%M').time()
         async with self.pool.acquire() as conn:
             return await conn.fetchrow('''
                 INSERT INTO appointments 
