@@ -67,13 +67,17 @@ class Database:
                 RETURNING id
             ''', user_id, service, service_price, master, master_telegram_id, date_obj, time_obj, name, phone)
 
-    async def get_appointments_by_master_telegram_id(self, master_tg_id: int):
-        async with self.pool.acquire() as conn:
-            return await conn.fetch('''
-                SELECT * FROM appointments
-                WHERE master_telegram_id = $1 AND status = 'active'
-                ORDER BY appointment_date DESC, appointment_time DESC
-            ''', master_tg_id)
+    async def get_appointments_by_master_telegram_id(self, master_telegram_id: int):
+    async with self.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT * FROM appointments
+               WHERE master_telegram_id=$1
+                 AND (appointment_date > CURRENT_DATE
+                      OR (appointment_date = CURRENT_DATE AND appointment_time > CURRENT_TIME))
+               ORDER BY appointment_date, appointment_time""",
+            master_telegram_id
+        )
+        return [dict(r) for r in rows]
 
     async def get_appointments_by_user_id(self, user_id: int):
         async with self.pool.acquire() as conn:
