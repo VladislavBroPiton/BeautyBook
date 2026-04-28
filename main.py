@@ -295,17 +295,13 @@ async def master_api(request):
         body = await request.json()
         action = body.get('action')
         password = body.get('password', '')
-        init_data = body.get('initData', '')
+        user_id = int(body.get('user_id', 0))
 
+        # Проверка пароля
         if password != MASTER_PASSWORD:
             return web.json_response({"success": False, "error": "Неверный пароль"}, status=403)
 
-        # if not verify_init_data(init_data):
-        #    return web.json_response({"success": False, "error": "Ошибка валидации Telegram"}, status=403)
-
-        user_data = dict(pair.split('=') for pair in init_data.split('&') if '=' in pair)
-        user_id = int(user_data.get('user_id', 0))
-
+        # Проверка доступа по ID
         if not user_id or user_id not in MANAGER_IDS:
             return web.json_response({
                 "success": False,
