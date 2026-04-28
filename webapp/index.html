@@ -17,6 +17,8 @@
         <div class="logo">
             <img src="/webapp/static/logo.jpg" alt="BeautyBook" id="logoImg" style="display:block; width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
             <h1>BeautyBook</h1>
+            <!-- Кнопка переключения в мастер-режим -->
+            <button id="showMasterBtn" style="margin-left:auto; background:transparent; border:none; color:var(--accent); cursor:pointer; font-size:20px;">👤</button>
         </div>
         <div class="subtitle">ЗАПИСЬ ЗА 30 СЕКУНД</div>
 
@@ -74,6 +76,20 @@
                 </div>
             </div>
         </form>
+
+        <!-- Секция мастера (изначально скрыта) -->
+        <div id="masterSection" style="display:none;">
+            <div class="master-login" id="masterLogin">
+                <h2>🔐 Вход для мастеров</h2>
+                <input type="password" id="masterPassword" placeholder="Введите пароль" inputmode="numeric" pattern="[0-9]*">
+                <button id="masterLoginBtn">Войти</button>
+            </div>
+            <div id="masterContent" style="display:none;">
+                <h2>📋 Мои записи</h2>
+                <div id="masterAppointments"></div>
+                <button id="masterLogoutBtn" class="btn-secondary">Выйти</button>
+            </div>
+        </div>
 
         <div id="formError" class="error-message"></div>
         <div class="progress-bar" id="progressBar" style="display:none;"><div class="progress-fill"></div></div>
