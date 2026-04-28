@@ -10,6 +10,7 @@ const totalPriceSpan = document.getElementById('totalPrice');
 const serviceSelect = document.getElementById('serviceSelect');
 let flatpickrInstance = null;
 let refreshInterval = null;
+let masterRefreshInterval = null;
 
 // Шаги формы
 let currentStep = 1;
