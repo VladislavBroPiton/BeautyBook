@@ -244,18 +244,29 @@ showMasterBtn.addEventListener('click', () => {
 masterLoginBtn.addEventListener('click', async () => {
     const password = masterPassword.value.trim();
     if (!password) return;
-    const initData = tg.initData || '';
+
+    // Безопасно получаем ID пользователя из Telegram WebApp API
+    const userId = tg.initDataUnsafe?.user?.id;
+    if (!userId) {
+        alert('Ошибка: не удалось определить пользователя Telegram');
+        return;
+    }
+
     try {
         const resp = await fetch('/master_api', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'login', password, initData})
+            body: JSON.stringify({
+                action: 'login',
+                password,
+                user_id: userId       // ← отправляем ID напрямую
+            })
         });
         const data = await resp.json();
         if (data.success) {
             masterLogin.style.display = 'none';
             masterContent.style.display = 'block';
-            loadMasterAppointments(password, initData);
+            loadMasterAppointments(password, userId);
         } else {
             alert(data.error || 'Ошибка входа');
         }
@@ -264,12 +275,16 @@ masterLoginBtn.addEventListener('click', async () => {
     }
 });
 
-async function loadMasterAppointments(password, initData) {
+async function loadMasterAppointments(password, userId) {
     try {
         const resp = await fetch('/master_api', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'list', password, initData})
+            body: JSON.stringify({
+                action: 'list',
+                password,
+                user_id: userId
+            })
         });
         const data = await resp.json();
         if (data.success) {
@@ -302,20 +317,25 @@ function renderMasterAppointments(appointments) {
         btn.addEventListener('click', async (e) => {
             const id = e.target.getAttribute('data-id');
             if (confirm('Отменить запись?')) {
-                const initData = tg.initData || '';
+                const userId = tg.initDataUnsafe?.user?.id;
                 const password = masterPassword.value.trim();
                 const resp = await fetch('/master_api', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'cancel', appointment_id: id, password, initData})
-                });
-                const data = await resp.json();
-                if (data.success) {
-                    loadMasterAppointments(password, initData);
-                } else {
-                    alert(data.error || 'Не удалось отменить');
-                }
-            }
+                    body: JSON.stringify({
+                        action: 'cancel',
+                        appointment_id: id,
+                        password,
+                        user_id: userId
+        })
+    });
+    const data = await resp.json();
+    if (data.success) {
+        loadMasterAppointments(password, userId);
+    } else {
+        alert(data.error || 'Не удалось отменить');
+    }
+}
         });
     });
 }
