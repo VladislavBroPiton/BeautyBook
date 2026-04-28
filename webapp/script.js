@@ -44,6 +44,7 @@ updatePrice();
 
 // Функция загрузки свободных слотов (уже была, но немного улучшим)
 async function loadFreeSlots() {
+    console.log('📡 loadFreeSlots вызвана, мастер:', document.querySelector('[name="master"]').value, 'дата:', document.getElementById('datetimePicker').value);
     const master = document.querySelector('[name="master"]').value;
     const datetimeVal = document.getElementById('datetimePicker').value;
     if (!datetimeVal) return;
@@ -74,13 +75,15 @@ async function loadFreeSlots() {
 
 // Функция для запуска автообновления (каждые 10 секунд)
 function startAutoRefresh() {
+    console.log('🔄 startAutoRefresh вызвана');
     if (refreshInterval) clearInterval(refreshInterval);
     refreshInterval = setInterval(() => {
+        console.log('⏰ Автообновление слотов...');  // внутри интервала
         const datetimePicker = document.getElementById('datetimePicker');
         if (datetimePicker && datetimePicker.value) {
             loadFreeSlots();
         }
-    }, 10000); // 10 секунд
+    }, 10000);
 }
 
 // Остановка автообновления
@@ -103,6 +106,7 @@ function initFlatpickr() {
         minDate: "today",
         locale: "ru",
         onChange: async (selectedDates, dateStr) => {
+            console.log('📅 Выбрана новая дата/время:', dateStr);
             await loadFreeSlots();
             startAutoRefresh(); // запускаем автообновление после выбора даты
             saveFormData();
@@ -132,6 +136,7 @@ function loadSavedData() {
         if (data.datetime && flatpickrInstance) flatpickrInstance.setDate(data.datetime, false);
         updatePrice();
         if (data.master && data.datetime) {
+            console.log('💾 Загружены сохранённые данные, запускаем автообновление');
             loadFreeSlots();
             startAutoRefresh();
         }
