@@ -211,6 +211,7 @@ form.addEventListener('submit', async (e) => {
 
 form.addEventListener('input', saveFormData);
 document.querySelector('[name="master"]').addEventListener('change', () => {
+    console.log('👩‍🦰 Сменился мастер, обновляем слоты');
     saveFormData();
     loadFreeSlots();
     startAutoRefresh(); // перезапускаем автообновление при смене мастера
