@@ -38,3 +38,27 @@
 ---
 
 ## 📁 Структура проекта
+
+BeautyBook/
+├── .gitignore
+├── requirements.txt
+├── config.py # Загрузка переменных окружения
+├── database.py # Асинхронная работа с PostgreSQL (asyncpg)
+├── google_calendar.py # Сервис Google Calendar
+├── main.py # Основной бот, веб-сервер, вебхуки
+└── webapp/ # Mini App (фронтенд)
+├── index.html
+├── style.css
+├── script.js
+└── logo.jpg
+
+
+---
+
+## ⚙️ Локальный запуск и деплой
+
+### 1. Клонирование репозитория
+
+```bash
+git clone https://github.com/VladislavBroPiton/BeautyBook.git
+cd BeautyBook 
