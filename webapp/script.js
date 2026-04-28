@@ -245,11 +245,18 @@ masterLoginBtn.addEventListener('click', async () => {
     const password = masterPassword.value.trim();
     if (!password) return;
 
-    // Безопасно получаем ID пользователя из Telegram WebApp API
-    const userId = tg.initDataUnsafe?.user?.id;
+    // Пытаемся получить ID автоматически
+    let userId = tg.initDataUnsafe?.user?.id;
+    
+    // Если не получилось — запрашиваем вручную
     if (!userId) {
-        alert('Ошибка: не удалось определить пользователя Telegram');
-        return;
+        userId = prompt('Не удалось определить ваш Telegram ID.\nПожалуйста, введите его вручную:');
+        if (!userId) return;
+        userId = parseInt(userId);
+        if (isNaN(userId)) {
+            alert('Некорректный ID');
+            return;
+        }
     }
 
     try {
@@ -259,7 +266,7 @@ masterLoginBtn.addEventListener('click', async () => {
             body: JSON.stringify({
                 action: 'login',
                 password,
-                user_id: userId       // ← отправляем ID напрямую
+                user_id: userId
             })
         });
         const data = await resp.json();
