@@ -9,21 +9,29 @@ const progressFill = progressBar.querySelector('.progress-fill');
 const totalPriceSpan = document.getElementById('totalPrice');
 const serviceSelect = document.getElementById('serviceSelect');
 let flatpickrInstance = null;
-let refreshInterval = null;
+let refreshInterval = null; // для хранения интервала
 
-// Шаги
+// Шаги формы
 let currentStep = 1;
 const steps = document.querySelectorAll('.step');
+
 function showStep(step) {
-    steps.forEach((s, idx) => s.classList.toggle('active', idx === step-1));
+    steps.forEach((s, idx) => {
+        s.classList.toggle('active', idx === step-1);
+    });
     currentStep = step;
 }
-document.querySelectorAll('.next-btn').forEach(btn => btn.addEventListener('click', () => {
-    if (currentStep < steps.length) showStep(currentStep + 1);
-}));
-document.querySelectorAll('.prev-btn').forEach(btn => btn.addEventListener('click', () => {
-    if (currentStep > 1) showStep(currentStep - 1);
-}));
+
+document.querySelectorAll('.next-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        if (currentStep < steps.length) showStep(currentStep + 1);
+    });
+});
+document.querySelectorAll('.prev-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        if (currentStep > 1) showStep(currentStep - 1);
+    });
+});
 showStep(1);
 
 function updatePrice() {
@@ -34,6 +42,7 @@ function updatePrice() {
 serviceSelect.addEventListener('change', updatePrice);
 updatePrice();
 
+// Функция загрузки свободных слотов (уже была, но немного улучшим)
 async function loadFreeSlots() {
     const master = document.querySelector('[name="master"]').value;
     const datetimeVal = document.getElementById('datetimePicker').value;
@@ -63,6 +72,26 @@ async function loadFreeSlots() {
     }
 }
 
+// Функция для запуска автообновления (каждые 10 секунд)
+function startAutoRefresh() {
+    if (refreshInterval) clearInterval(refreshInterval);
+    refreshInterval = setInterval(() => {
+        const datetimePicker = document.getElementById('datetimePicker');
+        if (datetimePicker && datetimePicker.value) {
+            loadFreeSlots();
+        }
+    }, 10000); // 10 секунд
+}
+
+// Остановка автообновления
+function stopAutoRefresh() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+}
+
+// Инициализация Flatpickr с автообновлением
 function initFlatpickr() {
     const datetimeInput = document.getElementById('datetimePicker');
     if (!datetimeInput) return;
@@ -75,16 +104,10 @@ function initFlatpickr() {
         locale: "ru",
         onChange: async (selectedDates, dateStr) => {
             await loadFreeSlots();
+            startAutoRefresh(); // запускаем автообновление после выбора даты
             saveFormData();
         }
     });
-    // Автообновление слотов каждые 30 секунд
-    if (refreshInterval) clearInterval(refreshInterval);
-    refreshInterval = setInterval(() => {
-        if (flatpickrInstance && flatpickrInstance.selectedDates.length) {
-            loadFreeSlots();
-        }
-    }, 30000);
 }
 
 function saveFormData() {
@@ -108,7 +131,10 @@ function loadSavedData() {
         form.master.value = data.master || '👩‍🦰 Анна';
         if (data.datetime && flatpickrInstance) flatpickrInstance.setDate(data.datetime, false);
         updatePrice();
-        if (data.master && data.datetime) loadFreeSlots();
+        if (data.master && data.datetime) {
+            loadFreeSlots();
+            startAutoRefresh();
+        }
     }
 }
 
@@ -152,6 +178,7 @@ form.addEventListener('submit', async (e) => {
 
     let datetime = form.datetime.value;
     if (datetime.includes(' ')) datetime = datetime.replace(' ', 'T');
+
     const formData = {
         name: form.name.value.trim(),
         phone: form.phone.value.trim(),
@@ -172,6 +199,8 @@ form.addEventListener('submit', async (e) => {
         errorDiv.style.display = 'block';
         submitBtn.disabled = false;
         submitBtn.textContent = '✅ Записаться';
+    } finally {
+        stopAutoRefresh(); // останавливаем обновление при отправке
     }
 });
 
@@ -179,13 +208,16 @@ form.addEventListener('input', saveFormData);
 document.querySelector('[name="master"]').addEventListener('change', () => {
     saveFormData();
     loadFreeSlots();
+    startAutoRefresh(); // перезапускаем автообновление при смене мастера
+});
+
+// Останавливаем интервал, если пользователь закрыл приложение
+window.addEventListener('beforeunload', () => {
+    stopAutoRefresh();
 });
 
 document.addEventListener('DOMContentLoaded', () => {
     initFlatpickr();
     loadSavedData();
     tg.expand();
-});
-window.addEventListener('beforeunload', () => {
-    if (refreshInterval) clearInterval(refreshInterval);
 });
