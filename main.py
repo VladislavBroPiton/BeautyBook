@@ -2,6 +2,8 @@ import asyncio
 import logging
 import os
 import json
+import hmac
+import hashlib
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -20,6 +22,7 @@ db = Database()
 calendar_manager = GoogleCalendarManager(CALENDAR_ID)
 
 MANAGER_IDS = list(map(int, os.getenv("MANAGER_IDS", "").split(","))) if os.getenv("MANAGER_IDS") else []
+MASTER_PASSWORD = os.getenv("MASTER_PASSWORD", "1234")  # Новое: единый пароль для мастеров
 user_pagination = {}
 
 PRICES = {
@@ -29,7 +32,7 @@ PRICES = {
 }
 
 MASTER_IDS = {
-    "👩‍🦰 Анна": 458433916,      # замените на реальные ID
+    "👩‍🦰 Анна": 458433916,
     "👩 Елена": 987654321,
     "👩‍🦱 Наталья": 555555555,
 }
@@ -209,12 +212,10 @@ async def handle_web_app_data(message: types.Message):
         await message.answer("Ошибка: мастер не найден. Обновите приложение.")
         return
 
-    # Проверка лимита записей на мастера в день
     if not await db.check_master_limit(master_tg_id, date_part, DAILY_LIMIT):
         await message.answer(f"Извините, у мастера {master_name} достигнут лимит на этот день ({DAILY_LIMIT}). Выберите другую дату.")
         return
 
-    # Проверка, что конкретный слот ещё свободен
     if not await db.is_slot_available(master_tg_id, date_part, time_part):
         await message.answer("❌ Это время уже занято. Пожалуйста, выберите другой слот.")
         return
@@ -277,6 +278,68 @@ async def get_slots(request):
         logger.error(f"get_slots error: {e}")
         return web.json_response({"busy": [], "error": str(e)}, status=500)
 
+# ---------- Новое: API для мастерского раздела ----------
+def verify_init_data(init_data: str):
+    """Проверка подлинности initData от Telegram"""
+    data = dict(pair.split('=') for pair in init_data.split('&') if '=' in pair)
+    received_hash = data.pop('hash', None)
+    if not received_hash:
+        return False
+    data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(data.items()))
+    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    return computed_hash == received_hash
+
+async def master_api(request):
+    try:
+        body = await request.json()
+        action = body.get('action')
+        password = body.get('password', '')
+        init_data = body.get('initData', '')
+
+        if password != MASTER_PASSWORD:
+            return web.json_response({"success": False, "error": "Неверный пароль"}, status=403)
+
+        if not verify_init_data(init_data):
+            return web.json_response({"success": False, "error": "Ошибка валидации Telegram"}, status=403)
+
+        user_data = dict(pair.split('=') for pair in init_data.split('&') if '=' in pair)
+        user_id = int(user_data.get('user_id', 0))
+
+        if not user_id or user_id not in MANAGER_IDS:
+            return web.json_response({"success": False, "error": "Нет доступа"}, status=403)
+
+        if action == "login":
+            return web.json_response({"success": True, "user_id": user_id})
+
+        elif action == "list":
+            apps = await db.get_appointments_by_master_telegram_id(user_id)
+            result = [{
+                "id": a["id"],
+                "client_name": a["client_name"],
+                "client_phone": a["client_phone"],
+                "service": a["service"],
+                "price": a["service_price"],
+                "date": a["appointment_date"].strftime("%Y-%m-%d") if hasattr(a["appointment_date"], 'strftime') else a["appointment_date"],
+                "time": a["appointment_time"].strftime("%H:%M") if hasattr(a["appointment_time"], 'strftime') else a["appointment_time"],
+            } for a in apps]
+            return web.json_response({"success": True, "appointments": result})
+
+        elif action == "cancel":
+            app_id = int(body.get("appointment_id", 0))
+            app = await db.get_appointment_by_id(app_id)
+            if not app or app["master_telegram_id"] != user_id:
+                return web.json_response({"success": False, "error": "Нельзя отменить"}, status=403)
+            await db.delete_appointment(app_id)
+            return web.json_response({"success": True})
+
+        else:
+            return web.json_response({"success": False, "error": "Неизвестное действие"}, status=400)
+
+    except Exception as e:
+        logger.error(f"master_api error: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
 # ---------- Напоминания ----------
 async def reminders_loop():
     while True:
@@ -337,6 +400,7 @@ async def main():
     app.router.add_get('/webapp/', webapp_index)
     app.router.add_static('/webapp/static', path='webapp/', show_index=False)
     app.router.add_get('/get_slots', get_slots)
+    app.router.add_post('/master_api', master_api)          # Новое
 
     port = int(os.environ.get("PORT", 8000))
     runner = web.AppRunner(app)
