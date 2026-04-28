@@ -83,7 +83,7 @@ function startAutoRefresh() {
         if (datetimePicker && datetimePicker.value) {
             loadFreeSlots();
         }
-    }, 10000);
+    }, 5000);
 }
 
 // Остановка автообновления
